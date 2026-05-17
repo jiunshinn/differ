@@ -96,7 +96,12 @@ export interface DifferApi {
     title: string;
     task: string;
     output: string;
-    included: { comments: number[]; files: string[]; hunks: { filePath: string; hunkHeader: string }[] };
+    included: {
+      comments: number[];
+      files: string[];
+      hunks: { filePath: string; hunkHeader: string }[];
+      lineRanges?: { filePath: string; startLine: number; endLine: number }[];
+    };
   }) => Promise<unknown>;
   copyContext: (markdown: string) => Promise<boolean>;
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useApp } from '../state/AppStore';
+import { lineRangeKey, useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import ResizableLayout from '../components/ResizableLayout';
@@ -41,6 +41,7 @@ export default function ContextBuilderView() {
     state.selectedCommentIds.join('|'),
     state.selectedFilePaths.join('|'),
     state.selectedHunkKeys.join('|'),
+    state.selectedLineRanges.map(lineRangeKey).join('|'),
   ]);
 
   if (!state.repo || !state.session) {
@@ -59,6 +60,7 @@ export default function ContextBuilderView() {
         commentIds: state.selectedCommentIds,
         filePaths: state.selectedFilePaths,
         hunks,
+        lineRanges: state.selectedLineRanges,
       });
       setPreview(r.markdown);
     } catch (e) {
@@ -90,6 +92,7 @@ export default function ContextBuilderView() {
           comments: state.selectedCommentIds,
           files: state.selectedFilePaths,
           hunks,
+          lineRanges: state.selectedLineRanges,
         },
       });
       toast('success', 'Context bundle saved');
@@ -211,6 +214,34 @@ export default function ContextBuilderView() {
                 {k}
               </div>
             ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="section-label mb-1.5">Snippets</div>
+          <div className="panel-card p-2 max-h-[160px] overflow-auto">
+            {state.selectedLineRanges.length === 0 && (
+              <div className="text-xs text-text-muted px-1.5 py-1">
+                Select lines in the code viewer and click "Extract selection" to add a snippet.
+              </div>
+            )}
+            {state.selectedLineRanges.map((r) => {
+              const key = lineRangeKey(r);
+              return (
+                <div key={key} className="flex items-center gap-2 py-0.5 text-xs">
+                  <span className="flex-1 truncate font-mono" title={key}>
+                    {r.filePath}:{r.startLine}-{r.endLine}
+                  </span>
+                  <button
+                    className="btn-ghost h-5 w-5 p-0 text-text-muted hover:text-danger"
+                    onClick={() => dispatch({ type: 'toggleLineRangeSelection', range: r, on: false })}
+                    title="Remove snippet"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </aside>

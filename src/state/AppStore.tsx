@@ -35,6 +35,16 @@ export interface ActivityEvent {
   at: number; // epoch ms
 }
 
+export interface LineRangeSelection {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+}
+
+export function lineRangeKey(r: LineRangeSelection): string {
+  return `${r.filePath}::${r.startLine}-${r.endLine}`;
+}
+
 export interface AppState {
   view: View;
   repo: Repository | null;
@@ -57,6 +67,7 @@ export interface AppState {
   selectedCommentIds: number[];
   selectedFilePaths: string[];
   selectedHunkKeys: string[]; // "file::header"
+  selectedLineRanges: LineRangeSelection[]; // working-tree line spans
   // activity log
   activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
@@ -82,6 +93,7 @@ type Action =
   | { type: 'toggleCommentSelection'; id: number; on?: boolean }
   | { type: 'toggleFileSelection'; path: string; on?: boolean }
   | { type: 'toggleHunkSelection'; key: string; on?: boolean }
+  | { type: 'toggleLineRangeSelection'; range: LineRangeSelection; on?: boolean }
   | { type: 'clearSelections' }
   | { type: 'pushActivity'; event: Omit<ActivityEvent, 'id' | 'at'> & { at?: number } }
   | { type: 'toast'; toast: AppState['toast'] };
@@ -107,6 +119,7 @@ const initial: AppState = {
   selectedCommentIds: [],
   selectedFilePaths: [],
   selectedHunkKeys: [],
+  selectedLineRanges: [],
   activity: [],
   toast: null,
 };
@@ -178,8 +191,27 @@ function reducer(state: AppState, action: Action): AppState {
           : state.selectedHunkKeys.filter((x) => x !== action.key),
       };
     }
+    case 'toggleLineRangeSelection': {
+      const key = lineRangeKey(action.range);
+      const has = state.selectedLineRanges.some((r) => lineRangeKey(r) === key);
+      const on = action.on ?? !has;
+      return {
+        ...state,
+        selectedLineRanges: on
+          ? has
+            ? state.selectedLineRanges
+            : [...state.selectedLineRanges, action.range]
+          : state.selectedLineRanges.filter((r) => lineRangeKey(r) !== key),
+      };
+    }
     case 'clearSelections':
-      return { ...state, selectedCommentIds: [], selectedFilePaths: [], selectedHunkKeys: [] };
+      return {
+        ...state,
+        selectedCommentIds: [],
+        selectedFilePaths: [],
+        selectedHunkKeys: [],
+        selectedLineRanges: [],
+      };
     case 'pushActivity': {
       const next: ActivityEvent = {
         id: activityIdSeq++,

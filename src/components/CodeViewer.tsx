@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { loadLanguage } from '@uiw/codemirror-extensions-langs';
 import type { LanguageName } from '@uiw/codemirror-extensions-langs';
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
-import { EditorView } from '@codemirror/view';
+import { EditorView, lineNumbers } from '@codemirror/view';
 import { api } from '../api';
 import { useTheme } from '../utils/theme';
 import type { FileContent } from '@shared/types';
@@ -11,6 +11,8 @@ import type { FileContent } from '@shared/types';
 interface Props {
   repoId: number;
   filePath: string | null;
+  onAddLineComment?: (line: number) => void;
+  onSelectionChange?: (range: { startLine: number; endLine: number } | null) => void;
 }
 
 const EXT_TO_LANG: Record<string, LanguageName> = {
@@ -69,11 +71,17 @@ function detectLanguage(path: string): LanguageName | null {
   return EXT_TO_LANG[ext] ?? null;
 }
 
-export default function CodeViewer({ repoId, filePath }: Props) {
+export default function CodeViewer({ repoId, filePath, onAddLineComment, onSelectionChange }: Props) {
   const { isDark } = useTheme();
   const [content, setContent] = useState<FileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Keep latest callbacks in refs so the CodeMirror extensions, which are
+  // rebuilt only when the file changes, always invoke the current handlers.
+  const addCommentRef = useRef(onAddLineComment);
+  const selectionRef = useRef(onSelectionChange);
+  addCommentRef.current = onAddLineComment;
+  selectionRef.current = onSelectionChange;
 
   useEffect(() => {
     if (!filePath) {
@@ -103,8 +111,35 @@ export default function CodeViewer({ repoId, filePath }: Props) {
     };
   }, [repoId, filePath]);
 
+  // Clear any leftover selection when switching files.
+  useEffect(() => {
+    selectionRef.current?.(null);
+  }, [filePath]);
+
   const extensions = useMemo(() => {
-    const exts = [EditorView.lineWrapping];
+    const exts = [
+      EditorView.lineWrapping,
+      lineNumbers({
+        domEventHandlers: {
+          click(view, line) {
+            const lineNo = view.state.doc.lineAt(line.from).number;
+            addCommentRef.current?.(lineNo);
+            return true;
+          },
+        },
+      }),
+      EditorView.updateListener.of((u) => {
+        if (!u.selectionSet) return;
+        const sel = u.state.selection.main;
+        if (sel.empty) {
+          selectionRef.current?.(null);
+          return;
+        }
+        const startLine = u.state.doc.lineAt(sel.from).number;
+        const endLine = u.state.doc.lineAt(sel.to).number;
+        selectionRef.current?.({ startLine, endLine });
+      }),
+    ];
     if (filePath) {
       const lang = detectLanguage(filePath);
       const langExt = lang ? loadLanguage(lang) : null;
@@ -151,7 +186,9 @@ export default function CodeViewer({ repoId, filePath }: Props) {
           editable={false}
           extensions={extensions}
           basicSetup={{
-            lineNumbers: true,
+            // Our custom lineNumbers extension above handles clicks; disable the
+            // default to avoid two gutters.
+            lineNumbers: false,
             foldGutter: true,
             highlightActiveLine: false,
             highlightActiveLineGutter: false,

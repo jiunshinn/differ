@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { useApp, type ActivityEvent, type ActivityKind, type RightPanelTab } from '../state/AppStore';
+import { lineRangeKey, useApp, type ActivityEvent, type ActivityKind, type RightPanelTab } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import type { CommentLabel, GithubCheckRun, ReviewComment } from '@shared/types';
@@ -52,7 +52,10 @@ export default function ReviewPanel() {
         <TabButton active={tab === 'context'} onClick={() => dispatch({ type: 'setRightPanelTab', tab: 'context' })}>
           Context
           <span className="ml-1 text-text-muted">
-            {state.selectedCommentIds.length + state.selectedHunkKeys.length + state.selectedFilePaths.length}
+            {state.selectedCommentIds.length +
+              state.selectedHunkKeys.length +
+              state.selectedFilePaths.length +
+              state.selectedLineRanges.length}
           </span>
         </TabButton>
       </div>
@@ -468,7 +471,10 @@ function ContextTab() {
       return;
     }
     const hasAny =
-      state.selectedCommentIds.length || state.selectedFilePaths.length || state.selectedHunkKeys.length;
+      state.selectedCommentIds.length ||
+      state.selectedFilePaths.length ||
+      state.selectedHunkKeys.length ||
+      state.selectedLineRanges.length;
     if (!hasAny) {
       setPreview('');
       return;
@@ -483,6 +489,7 @@ function ContextTab() {
         commentIds: state.selectedCommentIds,
         filePaths: state.selectedFilePaths,
         hunks,
+        lineRanges: state.selectedLineRanges,
       })
       .then((r) => {
         if (!cancelled) setPreview(r.markdown);
@@ -501,6 +508,7 @@ function ContextTab() {
     state.selectedCommentIds.join('|'),
     state.selectedFilePaths.join('|'),
     state.selectedHunkKeys.join('|'),
+    state.selectedLineRanges.map(lineRangeKey).join('|'),
     hunks,
     toast,
   ]);
@@ -515,7 +523,7 @@ function ContextTab() {
     }
   };
 
-  const counts = `${state.selectedCommentIds.length} comments · ${state.selectedHunkKeys.length} hunks · ${state.selectedFilePaths.length} files`;
+  const counts = `${state.selectedCommentIds.length} comments · ${state.selectedHunkKeys.length} hunks · ${state.selectedFilePaths.length} files · ${state.selectedLineRanges.length} snippets`;
 
   return (
     <>
@@ -577,6 +585,18 @@ function SelectionsList() {
         {state.selectedFilePaths.map((p) => (
           <SelRow key={p} onClear={() => dispatch({ type: 'toggleFileSelection', path: p, on: false })}>
             <span className="font-mono">{p}</span>
+          </SelRow>
+        ))}
+      </SelectionSection>
+      <SelectionSection title={`Snippets (${state.selectedLineRanges.length})`}>
+        {state.selectedLineRanges.map((r) => (
+          <SelRow
+            key={lineRangeKey(r)}
+            onClear={() => dispatch({ type: 'toggleLineRangeSelection', range: r, on: false })}
+          >
+            <span className="font-mono">
+              {r.filePath}:{r.startLine}-{r.endLine}
+            </span>
           </SelRow>
         ))}
       </SelectionSection>
