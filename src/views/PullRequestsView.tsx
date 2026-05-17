@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import type { GithubAuthState, GithubPullRequestSummary } from '@shared/types';
@@ -9,6 +10,7 @@ export default function PullRequestsView() {
   const [prs, setPrs] = useState<GithubPullRequestSummary[]>([]);
   const [auth, setAuth] = useState<GithubAuthState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState<number | null>(null);
 
   const repo = state.repo;
 
@@ -37,15 +39,18 @@ export default function PullRequestsView() {
 
   if (!repo) return null;
 
-  const checkout = async (pr: GithubPullRequestSummary) => {
+  const openPr = async (pr: GithubPullRequestSummary) => {
+    if (opening != null) return;
+    setOpening(pr.number);
     try {
       const session = await api.ghPrCheckout(repo.id, pr.number);
       dispatch({ type: 'setSession', session });
       dispatch({ type: 'setPrNumber', n: pr.number });
       dispatch({ type: 'view', view: 'pr-detail' });
-      toast('success', `Checked out PR #${pr.number}`);
     } catch (e) {
       toast('error', (e as Error).message);
+    } finally {
+      setOpening(null);
     }
   };
 
@@ -84,32 +89,40 @@ export default function PullRequestsView() {
               <div className="px-4 py-3 text-text-muted text-sm">No open pull requests.</div>
             )}
             <ul>
-              {prs.map((pr) => (
-                <li
-                  key={pr.number}
-                  className="px-4 py-3 border-b last:border-b-0 border-border hover:bg-bg-subtle cursor-pointer"
-                  onDoubleClick={() => void checkout(pr)}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={cn('chip', pr.isDraft && 'text-text-muted')}>#{pr.number}</span>
-                    <span className="text-sm font-medium truncate flex-1">{pr.title}</span>
-                    <span className="small-mono">{pr.author}</span>
-                    <span className="small-mono">
-                      {pr.headRef} → {pr.baseRef}
-                    </span>
-                    <button className="btn-primary h-8" onClick={() => void checkout(pr)}>
-                      Open
-                    </button>
-                    <button
-                      className="btn-ghost h-8 w-8 p-0"
-                      onClick={() => void api.openExternal(pr.url)}
-                      title="Open in browser"
-                    >
-                      ↗
-                    </button>
-                  </div>
-                </li>
-              ))}
+              {prs.map((pr) => {
+                const isOpening = opening === pr.number;
+                const isDisabled = opening != null && !isOpening;
+                return (
+                  <li
+                    key={pr.number}
+                    className={cn(
+                      'px-4 py-3 border-b last:border-b-0 border-border',
+                      isDisabled
+                        ? 'opacity-50 pointer-events-none'
+                        : 'hover:bg-bg-subtle cursor-pointer',
+                      isOpening && 'bg-bg-subtle',
+                    )}
+                    onClick={() => void openPr(pr)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={cn('chip', pr.isDraft && 'text-text-muted')}>
+                        #{pr.number}
+                      </span>
+                      <span className="text-sm font-medium truncate flex-1">{pr.title}</span>
+                      <span className="small-mono">{pr.author}</span>
+                      <span className="small-mono">
+                        {pr.headRef} → {pr.baseRef}
+                      </span>
+                      {isOpening && (
+                        <span className="flex items-center gap-1.5 text-text-muted small-mono">
+                          <Loader2 size={13} className="animate-spin" />
+                          Opening…
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

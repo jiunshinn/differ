@@ -58,87 +58,89 @@ export default function PullRequestDetailView() {
   }
 
   return (
-    <ResizableLayout
-      storageKey="pr-detail"
-      className="h-full w-full min-h-0 bg-bg-panel"
-      panes={[
-        { defaultSize: 300, minSize: 240, maxSize: 520 },
-        { defaultSize: 0, minSize: 320, flex: true },
-        { defaultSize: 360, minSize: 280, maxSize: 600 },
-      ]}
-    >
-      <aside className="overflow-auto border-r border-border bg-bg p-3.5">
-        <section className="panel-card p-3 mb-3.5">
-          <div className="text-xs text-text-muted font-mono">PR</div>
-          <div className="text-sm font-semibold leading-tight mt-1">
-            #{detail.number} {detail.title}
-          </div>
-          <div className="text-xs text-text-muted mt-1.5 font-mono">
-            {detail.author} · {detail.headRef} → {detail.baseRef}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
-              Back
-            </button>
-            <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
-              Submit
-            </button>
-          </div>
-          <button
-            className="btn w-full mt-2"
-            onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
-          >
-            Open on GitHub ↗
-          </button>
-        </section>
-
-        <div className="section-label mb-2">Changed files</div>
-        <div className="grid gap-[3px]">
-          {diffs.map((d) => (
-            <button
-              key={d.filePath}
-              className={cn(
-                'w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 min-w-0 border',
-                selectedPath === d.filePath
-                  ? 'bg-bg-panel border-border shadow-card'
-                  : 'border-transparent hover:bg-bg-subtle',
-              )}
-              onClick={() => setSelectedPath(d.filePath)}
-            >
-              <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
-                {d.filePath}
-              </span>
-              {d.isNew && <span className="tag">new</span>}
-              {d.isDeleted && <span className="tag">del</span>}
-              {d.isRenamed && <span className="tag">ren</span>}
-            </button>
-          ))}
-          {!diffs.length && (
-            <div className="p-3 text-xs text-text-muted">
-              No diff available. The PR head may have moved; try re-checking out.
+    <>
+      <ResizableLayout
+        storageKey="pr-detail"
+        className="h-full w-full min-h-0 bg-bg-panel"
+        panes={[
+          { defaultSize: 300, minSize: 240, maxSize: 520 },
+          { defaultSize: 0, minSize: 320, flex: true },
+          { defaultSize: 360, minSize: 280, maxSize: 600 },
+        ]}
+      >
+        <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+          <section className="panel-card p-3 mb-3.5">
+            <div className="text-xs text-text-muted font-mono">PR</div>
+            <div className="text-sm font-semibold leading-tight mt-1">
+              #{detail.number} {detail.title}
             </div>
+            <div className="text-xs text-text-muted mt-1.5 font-mono">
+              {detail.author} · {detail.headRef} → {detail.baseRef}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
+                Back
+              </button>
+              <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
+                GitHub review
+              </button>
+            </div>
+            <button
+              className="btn w-full mt-2"
+              onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
+            >
+              Open on GitHub ↗
+            </button>
+          </section>
+
+          <div className="section-label mb-2">Changed files</div>
+          <div className="grid gap-[3px]">
+            {diffs.map((d) => (
+              <button
+                key={d.filePath}
+                className={cn(
+                  'w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 min-w-0 border',
+                  selectedPath === d.filePath
+                    ? 'bg-bg-panel border-border shadow-card'
+                    : 'border-transparent hover:bg-bg-subtle',
+                )}
+                onClick={() => setSelectedPath(d.filePath)}
+              >
+                <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
+                  {d.filePath}
+                </span>
+                {d.isNew && <span className="tag">new</span>}
+                {d.isDeleted && <span className="tag">del</span>}
+                {d.isRenamed && <span className="tag">ren</span>}
+              </button>
+            ))}
+            {!diffs.length && (
+              <div className="p-3 text-xs text-text-muted">
+                No diff available. The PR head may have moved; try re-checking out.
+              </div>
+            )}
+          </div>
+        </aside>
+        <div className="min-h-0 flex flex-col">
+          {selectedDiff ? (
+            <PrFileDiff
+              diff={selectedDiff}
+              onLineComment={(side, line, hunkHeader) =>
+                setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiff.filePath })
+              }
+              onHunkComment={(hunkHeader) =>
+                setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiff.filePath })
+              }
+              onFileComment={() =>
+                setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiff.filePath })
+              }
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
           )}
         </div>
-      </aside>
-      <div className="min-h-0 flex flex-col">
-        {selectedDiff ? (
-          <PrFileDiff
-            diff={selectedDiff}
-            onLineComment={(side, line, hunkHeader) =>
-              setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiff.filePath })
-            }
-            onHunkComment={(hunkHeader) =>
-              setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiff.filePath })
-            }
-            onFileComment={() =>
-              setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiff.filePath })
-            }
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
-        )}
-      </div>
-      <ReviewPanel />
+        <ReviewPanel />
+      </ResizableLayout>
       {composer && state.session && (
         <CommentComposer
           filePath={composer.filePath}
@@ -150,7 +152,7 @@ export default function PullRequestDetailView() {
         />
       )}
       {submitOpen && <SubmitReviewDialog detail={detail} onClose={() => setSubmitOpen(false)} />}
-    </ResizableLayout>
+    </>
   );
 }
 
@@ -277,12 +279,33 @@ function SubmitReviewDialog({
   const { state, toast, loadComments } = useApp();
   const [body, setBody] = useState('');
   const [event, setEvent] = useState<GithubReviewEvent>('COMMENT');
+  const [selectedCommentIds, setSelectedCommentIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
 
   const lineComments = useMemo(
-    () => state.comments.filter((c) => c.target_kind === 'line' && c.status === 'open'),
+    () =>
+      state.comments.filter(
+        (c) =>
+          c.target_kind === 'line' &&
+          c.status === 'open' &&
+          c.line_number != null &&
+          (c.diff_side === 'old' || c.diff_side === 'new'),
+      ),
     [state.comments],
   );
+  const selectedLineComments = useMemo(
+    () => lineComments.filter((c) => selectedCommentIds.includes(c.id)),
+    [lineComments, selectedCommentIds],
+  );
+  const canSubmit = event === 'APPROVE' || body.trim().length > 0 || selectedLineComments.length > 0;
+
+  useEffect(() => {
+    setSelectedCommentIds((ids) => ids.filter((id) => lineComments.some((c) => c.id === id)));
+  }, [lineComments]);
+
+  const toggleComment = (id: number) => {
+    setSelectedCommentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
 
   const submit = async () => {
     if (!state.repo) return;
@@ -292,14 +315,14 @@ function SubmitReviewDialog({
         prNumber: detail.number,
         event,
         body,
-        comments: lineComments.map((c) => ({
+        comments: selectedLineComments.map((c) => ({
           path: c.file_path,
           line: c.line_number ?? 1,
           side: c.diff_side === 'old' ? 'LEFT' : 'RIGHT',
           body: c.body,
         })),
       });
-      for (const c of lineComments) {
+      for (const c of selectedLineComments) {
         await api.updateComment(c.id, { status: 'resolved' });
       }
       await loadComments();
@@ -317,7 +340,8 @@ function SubmitReviewDialog({
       <div className="panel-card p-4 w-[560px] shadow-raised">
         <div className="text-base font-semibold mb-1">Submit review · #{detail.number}</div>
         <div className="text-xs text-text-muted mb-3">
-          {lineComments.length} pending line comment{lineComments.length === 1 ? '' : 's'} will be sent.
+          {selectedLineComments.length} of {lineComments.length} local line comment
+          {lineComments.length === 1 ? '' : 's'} selected for GitHub.
         </div>
         <textarea
           className="input min-h-[140px] font-sans"
@@ -325,6 +349,54 @@ function SubmitReviewDialog({
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
+        <section className="mt-3 border border-border rounded-card overflow-hidden">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-bg-subtle border-b border-border">
+            <span className="text-xs font-semibold text-text-secondary">Line comments</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                className="btn-ghost h-7 text-[11px] px-2"
+                onClick={() => setSelectedCommentIds(lineComments.map((c) => c.id))}
+                disabled={!lineComments.length}
+              >
+                Select all
+              </button>
+              <button
+                className="btn-ghost h-7 text-[11px] px-2"
+                onClick={() => setSelectedCommentIds([])}
+                disabled={!selectedCommentIds.length}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[220px] overflow-auto">
+            {lineComments.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-text-muted">No local line comments ready to submit.</div>
+            ) : (
+              lineComments.map((c) => (
+                <label
+                  key={c.id}
+                  className="grid grid-cols-[auto_1fr] gap-2 px-3 py-2.5 border-b last:border-b-0 border-border cursor-pointer hover:bg-bg-subtle"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={selectedCommentIds.includes(c.id)}
+                    onChange={() => toggleComment(c.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-mono text-text-muted truncate">
+                      {c.file_path} · {c.diff_side === 'old' ? '-' : '+'}
+                      {c.line_number}
+                      {c.label && <span className="ml-1 chip">{c.label}</span>}
+                    </span>
+                    <span className="block mt-1 text-sm whitespace-pre-wrap">{c.body}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        </section>
         <div className="mt-3 flex items-center gap-3">
           {(['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as const).map((ev) => (
             <label key={ev} className="text-sm flex items-center gap-1 cursor-pointer">
@@ -336,8 +408,8 @@ function SubmitReviewDialog({
           <button className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void submit()} disabled={busy}>
-            Submit
+          <button className="btn-primary" onClick={() => void submit()} disabled={busy || !canSubmit}>
+            Submit to GitHub
           </button>
         </div>
       </div>
