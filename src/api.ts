@@ -11,6 +11,7 @@ import type {
   FileReviewState,
   FileReviewStatus,
   GithubAuthState,
+  GithubCheckRun,
   GithubPullRequestDetail,
   GithubPullRequestSummary,
   GithubSubmitReviewInput,
@@ -101,6 +102,7 @@ export interface DifferApi {
   ghPrCheckout: (repoId: number, prNumber: number) => Promise<ReviewSession>;
   ghPrSubmitReview: (repoId: number, input: GithubSubmitReviewInput) => Promise<boolean>;
   ghPrOpenInBrowser: (repoId: number, prNumber: number) => Promise<boolean>;
+  ghPrChecks: (repoId: number, ref: string) => Promise<GithubCheckRun[]>;
 
   copyToClipboard: (text: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;

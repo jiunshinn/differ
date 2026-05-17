@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { AppProvider, useApp } from './state/AppStore';
 import RepositoryPicker from './views/RepositoryPicker';
 import LocalChangesView from './views/LocalChangesView';
@@ -12,14 +12,16 @@ function Shell() {
   const { state } = useApp();
 
   return (
-    <div className="h-full w-full flex flex-col bg-bg">
-      <TopBar />
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {state.view === 'picker' && <RepositoryPicker />}
-        {state.view === 'local' && <LocalChangesView />}
-        {state.view === 'pr-list' && <PullRequestsView />}
-        {state.view === 'pr-detail' && <PullRequestDetailView />}
-        {state.view === 'context' && <ContextBuilderView />}
+    <div className="h-full w-full p-3 sm:p-4 bg-bg overflow-hidden">
+      <div className="h-full w-full mx-auto bg-bg-panel border border-border rounded-card overflow-hidden grid grid-rows-[42px_48px_minmax(0,1fr)] shadow-raised">
+        <TopBar />
+        <main className="min-h-0">
+          {state.view === 'picker' && <RepositoryPicker />}
+          {state.view === 'local' && <LocalChangesView />}
+          {state.view === 'pr-list' && <PullRequestsView />}
+          {state.view === 'pr-detail' && <PullRequestDetailView />}
+          {state.view === 'context' && <ContextBuilderView />}
+        </main>
       </div>
       <Toast />
     </div>

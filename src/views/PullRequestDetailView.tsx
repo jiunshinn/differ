@@ -3,11 +3,12 @@ import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import CommentComposer from '../components/CommentComposer';
-import RightPanel from '../components/RightPanel';
+import ReviewPanel from '../components/ReviewPanel';
+import LeftRail from '../components/LeftRail';
 import type { FileDiff, GithubPullRequestDetail, GithubReviewEvent } from '@shared/types';
 
 export default function PullRequestDetailView() {
-  const { state, dispatch, toast } = useApp();
+  const { state, dispatch, toast, logActivity } = useApp();
   const [detail, setDetail] = useState<GithubPullRequestDetail | null>(null);
   const [diffs, setDiffs] = useState<FileDiff[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -31,7 +32,6 @@ export default function PullRequestDetailView() {
       try {
         const d = await api.ghPrDetail(repo.id, prNumber);
         setDetail(d);
-        // Build the diff base..head. The PR ref is already fetched into the local repo by checkout.
         const merged = await api.allDiff(repo.id, {
           base: `origin/${d.baseRef}`,
           head: d.headSha,
@@ -50,46 +50,57 @@ export default function PullRequestDetailView() {
   if (!repo || !prNumber) {
     return <div className="p-6 text-text-muted">Open a pull request from the list.</div>;
   }
+
+  const selectedDiff = useMemo(() => diffs.find((d) => d.filePath === selectedPath) ?? null, [diffs, selectedPath]);
+
   if (!detail) {
     return <div className="p-6 text-text-muted">{loading ? 'Loading…' : 'No PR detail.'}</div>;
   }
 
-  const selectedDiff = useMemo(() => diffs.find((d) => d.filePath === selectedPath) ?? null, [diffs, selectedPath]);
-
   return (
-    <div className="h-full flex">
-      <div className="w-72 min-w-[240px] border-r border-border bg-bg-panel flex flex-col">
-        <div className="p-3 border-b border-border">
-          <div className="text-xs text-text-muted">PR</div>
-          <div className="text-sm font-semibold leading-tight">
+    <div className="h-full w-full grid grid-cols-[220px_260px_minmax(0,1fr)_360px] min-h-0 bg-bg-panel">
+      <LeftRail />
+      <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+        <section className="panel-card p-3 mb-3.5">
+          <div className="text-xs text-text-muted font-mono">PR</div>
+          <div className="text-sm font-semibold leading-tight mt-1">
             #{detail.number} {detail.title}
           </div>
-          <div className="text-xs text-text-muted mt-1">
+          <div className="text-xs text-text-muted mt-1.5 font-mono">
             {detail.author} · {detail.headRef} → {detail.baseRef}
           </div>
-          <div className="mt-2 flex gap-1">
-            <button className="btn-primary text-xs" onClick={() => setSubmitOpen(true)}>
-              Submit review…
-            </button>
-            <button className="btn text-xs" onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}>
-              Open ↗
-            </button>
-            <button className="btn text-xs" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
               Back
             </button>
+            <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
+              Submit
+            </button>
           </div>
-        </div>
-        <div className="flex-1 min-h-0 overflow-auto">
+          <button
+            className="btn w-full mt-2"
+            onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
+          >
+            Open on GitHub ↗
+          </button>
+        </section>
+
+        <div className="section-label mb-2">Changed files</div>
+        <div className="grid gap-[3px]">
           {diffs.map((d) => (
             <button
               key={d.filePath}
               className={cn(
-                'w-full text-left px-3 py-1.5 text-sm flex items-center gap-2',
-                selectedPath === d.filePath ? 'bg-bg-hover' : 'hover:bg-bg-subtle',
+                'w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 min-w-0 border',
+                selectedPath === d.filePath
+                  ? 'bg-bg-panel border-border shadow-card'
+                  : 'border-transparent hover:bg-bg-subtle',
               )}
               onClick={() => setSelectedPath(d.filePath)}
             >
-              <span className="font-mono text-xs truncate flex-1">{d.filePath}</span>
+              <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
+                {d.filePath}
+              </span>
               {d.isNew && <span className="tag">new</span>}
               {d.isDeleted && <span className="tag">del</span>}
               {d.isRenamed && <span className="tag">ren</span>}
@@ -101,8 +112,8 @@ export default function PullRequestDetailView() {
             </div>
           )}
         </div>
-      </div>
-      <div className="flex-1 min-w-0 flex flex-col">
+      </aside>
+      <div className="min-h-0 flex flex-col">
         {selectedDiff ? (
           <PrFileDiff
             diff={selectedDiff}
@@ -120,9 +131,7 @@ export default function PullRequestDetailView() {
           <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
         )}
       </div>
-      <div className="w-[360px] min-w-[300px] border-l border-border bg-bg-panel">
-        <RightPanel />
-      </div>
+      <ReviewPanel />
       {composer && state.session && (
         <CommentComposer
           filePath={composer.filePath}
@@ -151,25 +160,36 @@ function PrFileDiff({
 }) {
   const { state, dispatch } = useApp();
   const comments = state.comments.filter((c) => c.file_path === diff.filePath);
+  const baseName = diff.filePath.split('/').pop() ?? diff.filePath;
+  const dirName = diff.filePath.includes('/') ? diff.filePath.slice(0, diff.filePath.lastIndexOf('/')) : '';
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div className="h-9 px-3 flex items-center gap-2 border-b border-border">
-        <div className="font-mono text-xs truncate flex-1">{diff.filePath}</div>
-        <button className="btn" onClick={onFileComment}>
+    <section className="flex-1 min-h-0 overflow-auto bg-bg-panel grid grid-rows-[auto_1fr]">
+      <header className="sticky top-0 z-10 grid grid-cols-[1fr_auto] gap-4 items-center px-4 py-3 bg-bg-panel border-b border-border">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight leading-tight truncate">{baseName}</h1>
+          <p className="mt-0.5 text-xs text-text-muted font-mono truncate">
+            {dirName && `${dirName}/`}
+            {diff.isNew && <span className="ml-2 tag">new</span>}
+            {diff.isDeleted && <span className="ml-2 tag">deleted</span>}
+            {diff.isRenamed && <span className="ml-2 tag">renamed</span>}
+            {diff.isBinary && <span className="ml-2 tag">binary</span>}
+          </p>
+        </div>
+        <button className="btn h-8" onClick={onFileComment}>
           Comment file
         </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      </header>
+      <div className="px-4 pb-4 pt-3 grid gap-3.5">
         {diff.isBinary ? (
-          <div className="p-6 text-text-muted text-sm">Binary file.</div>
+          <div className="panel-card p-6 text-sm text-text-muted">Binary file.</div>
         ) : diff.hunks.length === 0 ? (
-          <div className="p-6 text-text-muted text-sm">No changes.</div>
+          <div className="panel-card p-6 text-sm text-text-muted">No changes.</div>
         ) : (
           diff.hunks.map((h) => {
             const key = `${diff.filePath}::${h.header}`;
             const selected = state.selectedHunkKeys.includes(key);
             return (
-              <div key={h.header} className="border-b border-border-subtle">
+              <article key={h.header} className="panel-card">
                 <div className="hunk-header">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -177,9 +197,9 @@ function PrFileDiff({
                       checked={selected}
                       onChange={() => dispatch({ type: 'toggleHunkSelection', key })}
                     />
-                    <span className="font-mono">{h.header}</span>
+                    <span className="font-mono truncate">{h.header}</span>
                   </label>
-                  <button className="btn-ghost text-xs py-0" onClick={() => onHunkComment(h.header)}>
+                  <button className="btn-ghost h-7 text-xs px-2" onClick={() => onHunkComment(h.header)}>
                     Comment hunk
                   </button>
                 </div>
@@ -203,10 +223,10 @@ function PrFileDiff({
                         {l.content}
                         {side && lineNumber != null && (
                           <button
-                            className="absolute right-1 top-0 opacity-0 group-hover:opacity-100 btn-ghost py-0 px-1 text-[10px]"
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md border border-border bg-bg-panel grid place-items-center text-[10px] text-text-muted hover:text-accent"
                             onClick={() => onLineComment(side, lineNumber, h.header)}
                           >
-                            💬
+                            +
                           </button>
                         )}
                       </div>
@@ -216,27 +236,27 @@ function PrFileDiff({
                 {comments
                   .filter((c) => c.target_kind === 'hunk' && c.hunk_header === h.header)
                   .map((c) => (
-                    <div key={c.id} className="px-12 py-2 bg-bg-subtle text-sm border-y border-border-subtle">
-                      <div className="text-xs text-text-muted">
+                    <div key={c.id} className="px-3 py-2 bg-bg-subtle text-sm border-t border-border">
+                      <div className="small-mono mb-1">
                         hunk · {new Date(c.created_at).toLocaleString()}
                       </div>
                       {c.body}
                     </div>
                   ))}
-              </div>
+              </article>
             );
           })
         )}
         {comments
           .filter((c) => c.target_kind === 'file')
           .map((c) => (
-            <div key={c.id} className="px-6 py-3 bg-bg-subtle text-sm border-y border-border-subtle">
-              <div className="text-xs text-text-muted">file · {new Date(c.created_at).toLocaleString()}</div>
+            <div key={c.id} className="panel-card px-3 py-3 text-sm">
+              <div className="small-mono mb-1">file · {new Date(c.created_at).toLocaleString()}</div>
               {c.body}
             </div>
           ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -272,7 +292,6 @@ function SubmitReviewDialog({
           body: c.body,
         })),
       });
-      // Mark sent comments as resolved.
       for (const c of lineComments) {
         await api.updateComment(c.id, { status: 'resolved' });
       }
@@ -287,8 +306,8 @@ function SubmitReviewDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <div className="panel p-4 w-[560px]">
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center">
+      <div className="panel-card p-4 w-[560px] shadow-raised">
         <div className="text-base font-semibold mb-1">Submit review · #{detail.number}</div>
         <div className="text-xs text-text-muted mb-3">
           {lineComments.length} pending line comment{lineComments.length === 1 ? '' : 's'} will be sent.

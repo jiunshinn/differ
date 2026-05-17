@@ -71,6 +71,7 @@ const api = {
   ghPrCheckout: (repoId: number, prNumber: number) => invoke(IpcChannels.ghPrCheckout, repoId, prNumber),
   ghPrSubmitReview: (repoId: number, input: unknown) => invoke(IpcChannels.ghPrSubmitReview, repoId, input),
   ghPrOpenInBrowser: (repoId: number, prNumber: number) => invoke(IpcChannels.ghPrOpenInBrowser, repoId, prNumber),
+  ghPrChecks: (repoId: number, ref: string) => invoke(IpcChannels.ghPrChecks, repoId, ref),
 
   // System
   copyToClipboard: (text: string) => invoke(IpcChannels.clipboardWrite, text),

@@ -51,15 +51,17 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[460px] panel p-4">
-          <Dialog.Title className="text-base font-semibold mb-2">GitHub</Dialog.Title>
+        <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[460px] panel-card p-4 shadow-raised">
+          <Dialog.Title className="text-base font-semibold mb-2 tracking-tight">GitHub</Dialog.Title>
           {login ? (
             <div className="space-y-3">
               <div className="text-sm">
                 Signed in as <span className="text-accent">{login}</span>
               </div>
-              <div className="text-xs text-text-muted">Scopes: {scopes.join(', ') || '(none reported)'}</div>
+              <div className="text-xs text-text-muted font-mono">
+                Scopes: {scopes.join(', ') || '(none reported)'}
+              </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button className="btn" onClick={onClose}>
                   Close

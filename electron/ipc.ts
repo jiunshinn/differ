@@ -43,6 +43,7 @@ import {
   clearAuth,
   getAuthStatus,
   getPullRequestDetail,
+  listCheckRuns,
   listPullRequests,
   setToken,
   submitReview,
@@ -306,6 +307,12 @@ export function registerIpcHandlers(deps: Deps): void {
     if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
     await shell.openExternal(`https://github.com/${repo.github_owner}/${repo.github_repo}/pull/${prNumber}`);
     return true;
+  });
+
+  handle(IpcChannels.ghPrChecks, async (repoId: number, ref: string) => {
+    const repo = mustRepo(repoId);
+    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
+    return listCheckRuns(repo.github_owner, repo.github_repo, ref);
   });
 
   // System

@@ -1,1307 +1,1450 @@
 <!doctype html>
 <html lang="en">
-<head><script data-od-sandbox-shim>(function(){
-  function makeStore(){
-    var data = {};
-    var api = {
-      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
-      setItem: function(k, v){ data[k] = String(v); },
-      removeItem: function(k){ delete data[k]; },
-      clear: function(){ data = {}; },
-      key: function(i){ return Object.keys(data)[i] || null; }
-    };
-    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
-    return api;
-  }
-  function tryShim(name){
-    var works = false;
-    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
-    catch (_) { works = false; }
-    if (works) return;
-    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
-    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
-  }
-  tryShim('localStorage');
-  tryShim('sessionStorage');
-})();</script>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Patchline — Git review workspace</title>
-  <style>
-    :root {
-      --bg: #FAFAFA;
-      --surface: #FFFFFF;
-      --fg: #111111;
-      --muted: #6B6B6B;
-      --border: #E5E5E5;
-      --accent: #2F6FEB;
-      --success: #17A34A;
-      --warn: #EAB308;
-      --danger: #DC2626;
-      --line-add: rgba(23, 163, 74, 0.09);
-      --line-remove: rgba(220, 38, 38, 0.08);
-      --line-focus: rgba(47, 111, 235, 0.08);
-      --shadow-raised: 0 2px 8px rgba(17, 17, 17, 0.08);
-      --font-display: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      --font-mono: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      min-height: 100%;
-    }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font-family: var(--font-body);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    button,
-    input,
-    textarea {
-      font: inherit;
-    }
-
-    button {
-      border: 0;
-      cursor: pointer;
-    }
-
-    .prototype-shell {
-      min-height: 100vh;
-      padding: 24px;
-      display: grid;
-      place-items: center;
-    }
-
-    .app-window {
-      width: min(1480px, calc(100vw - 48px));
-      height: min(920px, calc(100vh - 48px));
-      min-height: 760px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      display: grid;
-      grid-template-rows: 42px 48px 1fr;
-      box-shadow: var(--shadow-raised);
-    }
-
-    .titlebar {
-      display: grid;
-      grid-template-columns: 156px 1fr 156px;
-      align-items: center;
-      padding: 0 14px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
-      user-select: none;
-    }
-
-    .traffic {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .traffic span {
-      width: 12px;
-      height: 12px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .traffic span:nth-child(1) {
-      background: var(--danger);
-      border-color: var(--danger);
-    }
-
-    .traffic span:nth-child(2) {
-      background: var(--warn);
-      border-color: var(--warn);
-    }
-
-    .traffic span:nth-child(3) {
-      background: var(--success);
-      border-color: var(--success);
-    }
-
-    .window-title {
-      justify-self: center;
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.02em;
-    }
-
-    .sync-state {
-      justify-self: end;
-      color: var(--muted);
-      font-size: 12px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .toolbar {
-      display: grid;
-      grid-template-columns: 260px 1fr auto;
-      align-items: center;
-      gap: 16px;
-      padding: 0 14px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .mark {
-      width: 24px;
-      height: 24px;
-      border-radius: 7px;
-      border: 1px solid var(--fg);
-      display: grid;
-      place-items: center;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      line-height: 1;
-    }
-
-    .brand strong {
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      white-space: nowrap;
-    }
-
-    .branch-strip {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      color: var(--muted);
-      font-size: 14px;
-      overflow: hidden;
-    }
-
-    .branch-pill {
-      color: var(--fg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 5px 9px;
-      background: var(--bg);
-      font-family: var(--font-mono);
-      white-space: nowrap;
-      font-size: 12px;
-    }
-
-    .toolbar-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .btn {
-      height: 32px;
-      padding: 0 12px;
-      border-radius: 8px;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--fg);
-      font-weight: 510;
-      letter-spacing: 0.02em;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      white-space: nowrap;
-    }
-
-    .btn.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #FFFFFF;
-    }
-
-    .btn.icon {
-      width: 32px;
-      padding: 0;
-      justify-content: center;
-      font-family: var(--font-mono);
-      font-size: 16px;
-    }
-
-    .workspace {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 220px 260px minmax(520px, 1fr) 360px;
-      background: var(--surface);
-    }
-
-    .rail,
-    .files,
-    .review-panel {
-      min-height: 0;
-      overflow: auto;
-      border-inline-end: 1px solid var(--border);
-      background: var(--bg);
-    }
-
-    .review-panel {
-      border-inline-end: 0;
-      border-inline-start: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .rail {
-      padding: 14px;
-    }
-
-    .repo-card {
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--surface);
-    }
-
-    .repo-name {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 8px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    .repo-meta {
-      color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
-    .nav-section {
-      margin-top: 18px;
-    }
-
-    .nav-title,
-    .panel-label,
-    .file-section-title {
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-
-    .nav-list {
-      margin-top: 8px;
-      display: grid;
-      gap: 2px;
-    }
-
-    .nav-item {
-      min-height: 36px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--fg);
-      text-decoration: none;
-      font-weight: 510;
-    }
-
-    .nav-item.active {
-      background: var(--surface);
-      border: 1px solid var(--border);
-    }
-
-    .count {
-      color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .agent-card {
-      margin-top: 18px;
-      padding: 12px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .agent-card p {
-      margin: 8px 0 0;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .agent-targets {
-      margin-top: 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .chip {
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 3px 7px;
-      color: var(--muted);
-      font-size: 12px;
-      background: var(--surface);
-      font-family: var(--font-mono);
-    }
-
-    .chip.selected {
-      color: var(--fg);
-      border-color: var(--fg);
-      background: var(--surface);
-    }
-
-    .commit-box {
-      margin-top: 18px;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--surface);
-    }
-
-    .commit-title {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-
-    .commit-input {
-      width: 100%;
-      min-height: 72px;
-      resize: none;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      background: var(--bg);
-      color: var(--fg);
-    }
-
-    .commit-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .files {
-      padding: 14px;
-    }
-
-    .search {
-      width: 100%;
-      height: 34px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0 10px;
-      background: var(--surface);
-      color: var(--fg);
-      outline: none;
-    }
-
-    .search:focus {
-      border-color: var(--accent);
-    }
-
-    .file-groups {
-      margin-top: 14px;
-      display: grid;
-      gap: 14px;
-    }
-
-    .file-list {
-      margin-top: 8px;
-      display: grid;
-      gap: 3px;
-    }
-
-    .file-row {
-      display: grid;
-      grid-template-columns: 18px 1fr auto;
-      gap: 8px;
-      align-items: center;
-      padding: 7px 8px;
-      border-radius: 8px;
-      color: var(--fg);
-      min-width: 0;
-    }
-
-    .file-row.active {
-      background: var(--surface);
-      border: 1px solid var(--border);
-    }
-
-    .file-row span:nth-child(2) {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .status {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 600;
-      text-align: center;
-    }
-
-    .status.modified {
-      color: var(--warn);
-    }
-
-    .status.added {
-      color: var(--success);
-    }
-
-    .status.removed {
-      color: var(--danger);
-    }
-
-    .small-mono {
-      color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .diff-area {
-      min-height: 0;
-      overflow: auto;
-      background: var(--surface);
-      display: grid;
-      grid-template-rows: auto 1fr;
-    }
-
-    .diff-header {
-      position: sticky;
-      top: 0;
-      z-index: 4;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 16px;
-      align-items: center;
-      padding: 14px 18px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .diff-title h1 {
-      margin: 0;
-      font-size: 20px;
-      line-height: 1.2;
-      letter-spacing: -0.01em;
-      font-weight: 600;
-    }
-
-    .diff-title p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 14px;
-      font-family: var(--font-mono);
-    }
-
-    .tab-strip {
-      display: flex;
-      gap: 4px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg);
-      padding: 3px;
-    }
-
-    .tab {
-      min-height: 28px;
-      padding: 0 10px;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.02em;
-      font-weight: 510;
-    }
-
-    .tab.active {
-      background: var(--surface);
-      color: var(--fg);
-      border: 1px solid var(--border);
-    }
-
-    .diff-summary {
-      padding: 14px 18px 10px;
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .summary-tile {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 12px;
-      background: var(--surface);
-    }
-
-    .summary-tile .value {
-      font-family: var(--font-mono);
-      font-size: 20px;
-      line-height: 1.2;
-      letter-spacing: -0.01em;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .summary-tile .label {
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .diff-table {
-      margin: 0 18px 22px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      background: var(--surface);
-    }
-
-    .hunk-title {
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 12px;
-      background: var(--bg);
-      border-bottom: 1px solid var(--border);
-      font-family: var(--font-mono);
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .line {
-      display: grid;
-      grid-template-columns: 52px 52px 1fr;
-      min-height: 28px;
-      border-bottom: 1px solid rgba(229, 229, 229, 0.65);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      line-height: 1.6;
-    }
-
-    .line:last-child {
-      border-bottom: 0;
-    }
-
-    .line.add {
-      background: var(--line-add);
-    }
-
-    .line.remove {
-      background: var(--line-remove);
-    }
-
-    .line.focus {
-      background: var(--line-focus);
-    }
-
-    .line-no {
-      padding: 4px 8px;
-      text-align: end;
-      color: var(--muted);
-      border-inline-end: 1px solid rgba(229, 229, 229, 0.75);
-      user-select: none;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .code {
-      padding: 4px 12px;
-      white-space: pre;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .token-add {
-      color: var(--success);
-      font-weight: 600;
-    }
-
-    .token-remove {
-      color: var(--danger);
-      font-weight: 600;
-    }
-
-    .inline-thread {
-      display: grid;
-      grid-template-columns: 104px 1fr;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .thread-spacer {
-      border-inline-end: 1px solid rgba(229, 229, 229, 0.75);
-      background: var(--line-focus);
-    }
-
-    .thread-card {
-      margin: 10px 12px 12px;
-      border: 1px solid var(--accent);
-      border-radius: 12px;
-      background: var(--surface);
-      overflow: hidden;
-    }
-
-    .thread-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .comment-author {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 600;
-    }
-
-    .avatar {
-      width: 22px;
-      height: 22px;
-      border-radius: 999px;
-      display: grid;
-      place-items: center;
-      background: var(--fg);
-      color: var(--surface);
-      font-size: 12px;
-      letter-spacing: 0.02em;
-      font-family: var(--font-mono);
-    }
-
-    .thread-body {
-      padding: 10px 12px 12px;
-    }
-
-    .thread-body p {
-      margin: 0;
-      color: var(--fg);
-      max-width: 72ch;
-    }
-
-    .thread-actions {
-      margin-top: 10px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .review-panel {
-      display: grid;
-      grid-template-rows: auto 1fr;
-      min-width: 0;
-    }
-
-    .review-header {
-      padding: 14px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .pr-title {
-      margin: 0;
-      font-size: 16px;
-      line-height: 1.25;
-      letter-spacing: -0.01em;
-      font-weight: 600;
-    }
-
-    .pr-meta {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-      font-family: var(--font-mono);
-    }
-
-    .review-content {
-      min-height: 0;
-      overflow: auto;
-      padding: 14px;
-      display: grid;
-      align-content: start;
-      gap: 14px;
-    }
-
-    .panel-card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--surface);
-      overflow: hidden;
-    }
-
-    .panel-card-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
-      padding: 11px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .panel-card-head strong {
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    .checks {
-      display: grid;
-    }
-
-    .check-row {
-      min-height: 38px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .check-row:last-child {
-      border-bottom: 0;
-    }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 999px;
-      background: var(--muted);
-      display: inline-block;
-      margin-inline-end: 8px;
-    }
-
-    .dot.success {
-      background: var(--success);
-    }
-
-    .dot.warn {
-      background: var(--warn);
-    }
-
-    .timeline {
-      padding: 12px;
-      display: grid;
-      gap: 12px;
-    }
-
-    .event {
-      display: grid;
-      grid-template-columns: 24px 1fr;
-      gap: 9px;
-      align-items: start;
-    }
-
-    .event p {
-      margin: 0;
-    }
-
-    .event .small-mono {
-      margin-top: 2px;
-    }
-
-    .context-card {
-      border-color: var(--border);
-    }
-
-    .context-options {
-      padding: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .context-preview {
-      margin: 0;
-      padding: 12px;
-      max-height: 258px;
-      overflow: auto;
-      background: var(--bg);
-      border-bottom: 1px solid var(--border);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      line-height: 1.55;
-      color: var(--fg);
-      white-space: pre-wrap;
-    }
-
-    .context-actions {
-      padding: 12px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .toast {
-      position: fixed;
-      inset-inline-end: 32px;
-      bottom: 32px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--fg);
-      box-shadow: var(--shadow-raised);
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 180ms ease, transform 180ms ease;
-      pointer-events: none;
-    }
-
-    .toast.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    @media (max-width: 1200px) {
-      .app-window {
-        width: calc(100vw - 24px);
-        height: calc(100vh - 24px);
+  <head>
+    <script data-od-sandbox-shim>
+      (function () {
+        sadjksajdkjsakdjk;
+        function makeStore() {
+          var data = {};
+          var api = {
+            getItem: function (k) {
+              return Object.prototype.hasOwnProperty.call(data, k)
+                ? data[k]
+                : null;
+            },
+            setItem: function (k, v) {
+              data[k] = String(v);
+            },
+            removeItem: function (k) {
+              delete data[k];
+            },
+            clear: function () {
+              data = {};
+            },
+            key: function (i) {
+              return Object.keys(data)[i] || null;
+            },
+          };
+          Object.defineProperty(api, "length", {
+            get: function () {
+              return Object.keys(data).length;
+            },
+          });
+          return api;
+        }
+        function tryShim(name) {
+          var works = false;
+          try {
+            works =
+              !!window[name] && typeof window[name].getItem === "function";
+            void window[name].length;
+          } catch (_) {
+            works = false;
+          }
+          if (works) return;
+          try {
+            Object.defineProperty(window, name, {
+              configurable: true,
+              value: makeStore(),
+            });
+          } catch (_) {
+            try {
+              window[name] = makeStore();
+            } catch (__) {}
+          }
+        }
+        tryShim("localStorage");
+        tryShim("sessionStorage");
+      })();
+    </script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Patchline — Git review workspace</title>
+    <style>
+      :root {
+        --bg: #fafafa;
+        --surface: #ffffff;
+        --fg: #111111;
+        --muted: #6b6b6b;
+        --border: #e5e5e5;
+        --accent: #2f6feb;
+        --success: #17a34a;
+        --warn: #eab308;
+        --danger: #dc2626;
+        --line-add: rgba(23, 163, 74, 0.09);
+        --line-remove: rgba(220, 38, 38, 0.08);
+        --line-focus: rgba(47, 111, 235, 0.08);
+        --shadow-raised: 0 2px 8px rgba(17, 17, 17, 0.08);
+        --font-display:
+          "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --font-body:
+          "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --font-mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-body);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
       }
 
       .prototype-shell {
-        padding: 12px;
+        min-height: 100vh;
+        padding: 24px;
+        display: grid;
+        place-items: center;
       }
 
-      .workspace {
-        grid-template-columns: 72px 230px minmax(440px, 1fr) 330px;
-      }
-
-      .rail {
-        padding: 10px;
-      }
-
-      .repo-card,
-      .agent-card,
-      .commit-box,
-      .nav-title,
-      .nav-item span:first-child,
-      .agent-card p,
-      .agent-targets,
-      .commit-input,
-      .commit-actions,
-      .repo-meta {
-        display: none;
-      }
-
-      .nav-item {
-        justify-content: center;
-        padding: 8px 4px;
-      }
-    }
-
-    @media (max-width: 900px) {
       .app-window {
-        min-height: 900px;
-        height: auto;
+        width: min(1480px, calc(100vw - 48px));
+        height: min(920px, calc(100vh - 48px));
+        min-height: 760px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 42px 48px 1fr;
+        box-shadow: var(--shadow-raised);
+      }
+
+      .titlebar {
+        display: grid;
+        grid-template-columns: 156px 1fr 156px;
+        align-items: center;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg);
+        user-select: none;
+      }
+
+      .traffic {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .traffic span {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .traffic span:nth-child(1) {
+        background: var(--danger);
+        border-color: var(--danger);
+      }
+
+      .traffic span:nth-child(2) {
+        background: var(--warn);
+        border-color: var(--warn);
+      }
+
+      .traffic span:nth-child(3) {
+        background: var(--success);
+        border-color: var(--success);
+      }
+
+      .window-title {
+        justify-self: center;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+
+      .sync-state {
+        justify-self: end;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
       }
 
       .toolbar {
-        grid-template-columns: 1fr;
-        padding: 10px 14px;
+        display: grid;
+        grid-template-columns: 260px 1fr auto;
+        align-items: center;
+        gap: 16px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .mark {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        border: 1px solid var(--fg);
+        display: grid;
+        place-items: center;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      .brand strong {
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+      }
+
+      .branch-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 14px;
+        overflow: hidden;
+      }
+
+      .branch-pill {
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 5px 9px;
+        background: var(--bg);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      .toolbar-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .btn {
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--fg);
+        font-weight: 510;
+        letter-spacing: 0.02em;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+      }
+
+      .btn.icon {
+        width: 32px;
+        padding: 0;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 16px;
       }
 
       .workspace {
-        grid-template-columns: 1fr;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 220px 260px minmax(520px, 1fr) 360px;
+        background: var(--surface);
       }
 
       .rail,
       .files,
       .review-panel {
+        min-height: 0;
+        overflow: auto;
+        border-inline-end: 1px solid var(--border);
+        background: var(--bg);
+      }
+
+      .review-panel {
         border-inline-end: 0;
-        border-inline-start: 0;
+        border-inline-start: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .rail {
+        padding: 14px;
+      }
+
+      .repo-card {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      .repo-name {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .repo-meta {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .nav-section {
+        margin-top: 18px;
+      }
+
+      .nav-title,
+      .panel-label,
+      .file-section-title {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .nav-list {
+        margin-top: 8px;
+        display: grid;
+        gap: 2px;
+      }
+
+      .nav-item {
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--fg);
+        text-decoration: none;
+        font-weight: 510;
+      }
+
+      .nav-item.active {
+        background: var(--surface);
+        border: 1px solid var(--border);
+      }
+
+      .count {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .agent-card {
+        margin-top: 18px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .agent-card p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .agent-targets {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 7px;
+        color: var(--muted);
+        font-size: 12px;
+        background: var(--surface);
+        font-family: var(--font-mono);
+      }
+
+      .chip.selected {
+        color: var(--fg);
+        border-color: var(--fg);
+        background: var(--surface);
+      }
+
+      .commit-box {
+        margin-top: 18px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      .commit-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-weight: 600;
+        margin-bottom: 10px;
+      }
+
+      .commit-input {
+        width: 100%;
+        min-height: 72px;
+        resize: none;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+
+      .commit-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .files {
+        padding: 14px;
+      }
+
+      .search {
+        width: 100%;
+        height: 34px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0 10px;
+        background: var(--surface);
+        color: var(--fg);
+        outline: none;
+      }
+
+      .search:focus {
+        border-color: var(--accent);
+      }
+
+      .file-groups {
+        margin-top: 14px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .file-list {
+        margin-top: 8px;
+        display: grid;
+        gap: 3px;
+      }
+
+      .file-row {
+        display: grid;
+        grid-template-columns: 18px 1fr auto;
+        gap: 8px;
+        align-items: center;
+        padding: 7px 8px;
+        border-radius: 8px;
+        color: var(--fg);
+        min-width: 0;
+      }
+
+      .file-row.active {
+        background: var(--surface);
+        border: 1px solid var(--border);
+      }
+
+      .file-row span:nth-child(2) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+      }
+
+      .status.modified {
+        color: var(--warn);
+      }
+
+      .status.added {
+        color: var(--success);
+      }
+
+      .status.removed {
+        color: var(--danger);
+      }
+
+      .small-mono {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .diff-area {
+        min-height: 0;
+        overflow: auto;
+        background: var(--surface);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .diff-header {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 14px 18px;
+        background: var(--surface);
         border-bottom: 1px solid var(--border);
       }
 
-      .diff-summary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      .diff-title h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        font-weight: 600;
       }
-    }
-  </style>
-</head>
-<body>
-  <div class="prototype-shell">
-    <section class="app-window" aria-label="Patchline desktop app prototype">
-      <header class="titlebar">
-        <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div class="window-title">Patchline · open-design/app · Pull Request #128</div>
-        <div class="sync-state">GitHub synced 2m ago</div>
-      </header>
 
-      <div class="toolbar">
-        <div class="brand">
-          <div class="mark">PL</div>
-          <strong>Patchline</strong>
+      .diff-title p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-family: var(--font-mono);
+      }
+
+      .tab-strip {
+        display: flex;
+        gap: 4px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        padding: 3px;
+      }
+
+      .tab {
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        font-weight: 510;
+      }
+
+      .tab.active {
+        background: var(--surface);
+        color: var(--fg);
+        border: 1px solid var(--border);
+      }
+
+      .diff-summary {
+        padding: 14px 18px 10px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .summary-tile {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: var(--surface);
+      }
+
+      .summary-tile .value {
+        font-family: var(--font-mono);
+        font-size: 20px;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .summary-tile .label {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .diff-table {
+        margin: 0 18px 22px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--surface);
+      }
+
+      .hunk-title {
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        font-family: var(--font-mono);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .line {
+        display: grid;
+        grid-template-columns: 52px 52px 1fr;
+        min-height: 28px;
+        border-bottom: 1px solid rgba(229, 229, 229, 0.65);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .line:last-child {
+        border-bottom: 0;
+      }
+
+      .line.add {
+        background: var(--line-add);
+      }
+
+      .line.remove {
+        background: var(--line-remove);
+      }
+
+      .line.focus {
+        background: var(--line-focus);
+      }
+
+      .line-no {
+        padding: 4px 8px;
+        text-align: end;
+        color: var(--muted);
+        border-inline-end: 1px solid rgba(229, 229, 229, 0.75);
+        user-select: none;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .code {
+        padding: 4px 12px;
+        white-space: pre;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .token-add {
+        color: var(--success);
+        font-weight: 600;
+      }
+
+      .token-remove {
+        color: var(--danger);
+        font-weight: 600;
+      }
+
+      .inline-thread {
+        display: grid;
+        grid-template-columns: 104px 1fr;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .thread-spacer {
+        border-inline-end: 1px solid rgba(229, 229, 229, 0.75);
+        background: var(--line-focus);
+      }
+
+      .thread-card {
+        margin: 10px 12px 12px;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .thread-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .comment-author {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+      }
+
+      .avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: var(--fg);
+        color: var(--surface);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        font-family: var(--font-mono);
+      }
+
+      .thread-body {
+        padding: 10px 12px 12px;
+      }
+
+      .thread-body p {
+        margin: 0;
+        color: var(--fg);
+        max-width: 72ch;
+      }
+
+      .thread-actions {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .review-panel {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-width: 0;
+      }
+
+      .review-header {
+        padding: 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .pr-title {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.25;
+        letter-spacing: -0.01em;
+        font-weight: 600;
+      }
+
+      .pr-meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-family: var(--font-mono);
+      }
+
+      .review-content {
+        min-height: 0;
+        overflow: auto;
+        padding: 14px;
+        display: grid;
+        align-content: start;
+        gap: 14px;
+      }
+
+      .panel-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .panel-card-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel-card-head strong {
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .checks {
+        display: grid;
+      }
+
+      .check-row {
+        min-height: 38px;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .check-row:last-child {
+        border-bottom: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--muted);
+        display: inline-block;
+        margin-inline-end: 8px;
+      }
+
+      .dot.success {
+        background: var(--success);
+      }
+
+      .dot.warn {
+        background: var(--warn);
+      }
+
+      .timeline {
+        padding: 12px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .event {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 9px;
+        align-items: start;
+      }
+
+      .event p {
+        margin: 0;
+      }
+
+      .event .small-mono {
+        margin-top: 2px;
+      }
+
+      .context-card {
+        border-color: var(--border);
+      }
+
+      .context-options {
+        padding: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .context-preview {
+        margin: 0;
+        padding: 12px;
+        max-height: 258px;
+        overflow: auto;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--fg);
+        white-space: pre-wrap;
+      }
+
+      .context-actions {
+        padding: 12px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .toast {
+        position: fixed;
+        inset-inline-end: 32px;
+        bottom: 32px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg);
+        box-shadow: var(--shadow-raised);
+        opacity: 0;
+        transform: translateY(8px);
+        transition:
+          opacity 180ms ease,
+          transform 180ms ease;
+        pointer-events: none;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 1200px) {
+        .app-window {
+          width: calc(100vw - 24px);
+          height: calc(100vh - 24px);
+        }
+
+        .prototype-shell {
+          padding: 12px;
+        }
+
+        .workspace {
+          grid-template-columns: 72px 230px minmax(440px, 1fr) 330px;
+        }
+
+        .rail {
+          padding: 10px;
+        }
+
+        .repo-card,
+        .agent-card,
+        .commit-box,
+        .nav-title,
+        .nav-item span:first-child,
+        .agent-card p,
+        .agent-targets,
+        .commit-input,
+        .commit-actions,
+        .repo-meta {
+          display: none;
+        }
+
+        .nav-item {
+          justify-content: center;
+          padding: 8px 4px;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .app-window {
+          min-height: 900px;
+          height: auto;
+        }
+
+        .toolbar {
+          grid-template-columns: 1fr;
+          padding: 10px 14px;
+        }
+
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .rail,
+        .files,
+        .review-panel {
+          border-inline-end: 0;
+          border-inline-start: 0;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .diff-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="prototype-shell">
+      <section class="app-window" aria-label="Patchline desktop app prototype">
+        <header class="titlebar">
+          <div class="traffic" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div class="window-title">
+            Patchline · open-design/app · Pull Request #128
+          </div>
+          <div class="sync-state">GitHub synced 2m ago</div>
+        </header>
+
+        <div class="toolbar">
+          <div class="brand">
+            <div class="mark">PL</div>
+            <strong>Patchline</strong>
+          </div>
+          <div class="branch-strip">
+            <span class="branch-pill">feature/context-comments</span>
+            <span>into</span>
+            <span class="branch-pill">main</span>
+            <span>·</span>
+            <span>12 files changed</span>
+            <span>·</span>
+            <span>4 unresolved comments</span>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn">Fetch</button>
+            <button class="btn">Push</button>
+            <button class="btn">Submit review</button>
+            <button class="btn icon" aria-label="More actions">⋯</button>
+          </div>
         </div>
-        <div class="branch-strip">
-          <span class="branch-pill">feature/context-comments</span>
-          <span>into</span>
-          <span class="branch-pill">main</span>
-          <span>·</span>
-          <span>12 files changed</span>
-          <span>·</span>
-          <span>4 unresolved comments</span>
-        </div>
-        <div class="toolbar-actions">
-          <button class="btn">Fetch</button>
-          <button class="btn">Push</button>
-          <button class="btn">Submit review</button>
-          <button class="btn icon" aria-label="More actions">⋯</button>
-        </div>
-      </div>
 
-      <main class="workspace">
-        <aside class="rail" aria-label="Repository navigation">
-          <div class="repo-card">
-            <div class="repo-name">
-              <span>open-design/app</span>
-              <span class="count">GH</span>
-            </div>
-            <div class="repo-meta">jiunshinn connected<br />origin/main clean<br />local branch ahead by 2</div>
-          </div>
-
-          <nav class="nav-section" aria-label="Workspace">
-            <div class="nav-title">Workspace</div>
-            <div class="nav-list">
-              <a class="nav-item active" href="#"><span>Changes</span><span class="count">12</span></a>
-              <a class="nav-item" href="#"><span>Pull requests</span><span class="count">3</span></a>
-              <a class="nav-item" href="#"><span>Comments</span><span class="count">4</span></a>
-              <a class="nav-item" href="#"><span>Branches</span><span class="count">18</span></a>
-              <a class="nav-item" href="#"><span>Remotes</span><span class="count">2</span></a>
-            </div>
-          </nav>
-
-          <section class="agent-card">
-            <div class="panel-label">AI handoff</div>
-            <p>Context is assembled from selected comments, nearby hunks, branch metadata, and PR review state.</p>
-            <div class="agent-targets">
-              <span class="chip selected">Codex</span>
-              <span class="chip">Cursor</span>
-              <span class="chip">Claude Code</span>
-            </div>
-          </section>
-
-          <section class="commit-box">
-            <div class="commit-title"><span>Commit draft</span><span class="count">4 staged</span></div>
-            <textarea class="commit-input" aria-label="Commit message draft">review: extract comment context for ai agents</textarea>
-            <div class="commit-actions">
-              <button class="btn">Stage all</button>
-              <button class="btn">Commit</button>
-            </div>
-          </section>
-        </aside>
-
-        <aside class="files" aria-label="Changed files">
-          <input class="search" aria-label="Filter changed files" placeholder="Filter files or comments" />
-          <div class="file-groups">
-            <section>
-              <div class="file-section-title">Review focus</div>
-              <div class="file-list">
-                <div class="file-row active">
-                  <span class="status modified">M</span>
-                  <span>src/review/context-extractor.ts</span>
-                  <span class="small-mono">+42</span>
-                </div>
-                <div class="file-row">
-                  <span class="status modified">M</span>
-                  <span>src/github/pull-request.ts</span>
-                  <span class="small-mono">+18</span>
-                </div>
-                <div class="file-row">
-                  <span class="status added">A</span>
-                  <span>src/agents/export-targets.ts</span>
-                  <span class="small-mono">+76</span>
-                </div>
+        <main class="workspace">
+          <aside class="rail" aria-label="Repository navigation">
+            <div class="repo-card">
+              <div class="repo-name">
+                <span>open-design/app</span>
+                <span class="count">GH</span>
               </div>
-            </section>
-
-            <section>
-              <div class="file-section-title">UI shell</div>
-              <div class="file-list">
-                <div class="file-row">
-                  <span class="status modified">M</span>
-                  <span>components/diff/InlineThread.tsx</span>
-                  <span class="small-mono">+29</span>
-                </div>
-                <div class="file-row">
-                  <span class="status modified">M</span>
-                  <span>components/context/PreviewPanel.tsx</span>
-                  <span class="small-mono">+31</span>
-                </div>
-                <div class="file-row">
-                  <span class="status removed">D</span>
-                  <span>legacy/comment-exporter.ts</span>
-                  <span class="small-mono">-64</span>
-                </div>
+              <div class="repo-meta">
+                jiunshinn connected<br />origin/main clean<br />local branch
+                ahead by 2
               </div>
-            </section>
+            </div>
 
-            <section>
-              <div class="file-section-title">Tests</div>
-              <div class="file-list">
-                <div class="file-row">
-                  <span class="status added">A</span>
-                  <span>tests/context-extractor.test.ts</span>
-                  <span class="small-mono">+88</span>
-                </div>
-                <div class="file-row">
-                  <span class="status modified">M</span>
-                  <span>tests/github-pr-review.test.ts</span>
-                  <span class="small-mono">+14</span>
-                </div>
+            <nav class="nav-section" aria-label="Workspace">
+              <div class="nav-title">Workspace</div>
+              <div class="nav-list">
+                <a class="nav-item active" href="#"
+                  ><span>Changes</span><span class="count">12</span></a
+                >
+                <a class="nav-item" href="#"
+                  ><span>Pull requests</span><span class="count">3</span></a
+                >
+                <a class="nav-item" href="#"
+                  ><span>Comments</span><span class="count">4</span></a
+                >
+                <a class="nav-item" href="#"
+                  ><span>Branches</span><span class="count">18</span></a
+                >
+                <a class="nav-item" href="#"
+                  ><span>Remotes</span><span class="count">2</span></a
+                >
               </div>
-            </section>
-          </div>
-        </aside>
+            </nav>
 
-        <section class="diff-area" aria-label="Diff review workspace">
-          <div class="diff-header">
-            <div class="diff-title">
-              <h1>context-extractor.ts</h1>
-              <p>src/review/context-extractor.ts · comment thread selected on lines 47–58</p>
-            </div>
-            <div class="tab-strip" aria-label="Diff mode">
-              <button class="tab active">Unified</button>
-              <button class="tab">Split</button>
-              <button class="tab">Viewed</button>
-            </div>
-          </div>
-
-          <div class="diff-summary" aria-label="File review summary">
-            <div class="summary-tile">
-              <div class="value">+42</div>
-              <div class="label">Added lines</div>
-            </div>
-            <div class="summary-tile">
-              <div class="value">-11</div>
-              <div class="label">Removed lines</div>
-            </div>
-            <div class="summary-tile">
-              <div class="value">2</div>
-              <div class="label">Open comments</div>
-            </div>
-            <div class="summary-tile">
-              <div class="value">1</div>
-              <div class="label">Context bundle</div>
-            </div>
-          </div>
-
-          <div class="diff-table">
-            <div class="hunk-title">
-              <span>@@ -34,18 +42,34 @@ export function createContextBundle</span>
-              <span>viewed by 3 reviewers</span>
-            </div>
-            <div class="line">
-              <div class="line-no">34</div>
-              <div class="line-no">42</div>
-              <div class="code">export function createContextBundle(input: ReviewSelection): AgentContext {</div>
-            </div>
-            <div class="line">
-              <div class="line-no">35</div>
-              <div class="line-no">43</div>
-              <div class="code">  const thread = input.selectedThread;</div>
-            </div>
-            <div class="line remove">
-              <div class="line-no">36</div>
-              <div class="line-no"></div>
-              <div class="code"><span class="token-remove">-</span> const prompt = thread.comments.map((comment) =&gt; comment.body).join('\n');</div>
-            </div>
-            <div class="line remove">
-              <div class="line-no">37</div>
-              <div class="line-no"></div>
-              <div class="code"><span class="token-remove">-</span> return { prompt, filePath: input.file.path };</div>
-            </div>
-            <div class="line add focus">
-              <div class="line-no"></div>
-              <div class="line-no">44</div>
-              <div class="code"><span class="token-add">+</span> const surroundingHunks = collectNearbyHunks(input.diff, thread.lineRange, {</div>
-            </div>
-            <div class="line add focus">
-              <div class="line-no"></div>
-              <div class="line-no">45</div>
-              <div class="code"><span class="token-add">+</span>   before: 24,</div>
-            </div>
-            <div class="line add focus">
-              <div class="line-no"></div>
-              <div class="line-no">46</div>
-              <div class="code"><span class="token-add">+</span>   after: 24,</div>
-            </div>
-            <div class="line add focus">
-              <div class="line-no"></div>
-              <div class="line-no">47</div>
-              <div class="code"><span class="token-add">+</span> });</div>
-            </div>
-
-            <div class="inline-thread">
-              <div class="thread-spacer"></div>
-              <article class="thread-card">
-                <div class="thread-head">
-                  <div class="comment-author"><span class="avatar">JS</span><span>Jiun Shin</span></div>
-                  <span class="small-mono">pending review · L47</span>
-                </div>
-                <div class="thread-body">
-                  <p>When this context goes to Codex or Claude Code, preserve the selected comment plus the exact nearby diff. Don’t include the whole file unless the reviewer asks for it.</p>
-                  <div class="thread-actions">
-                    <button class="btn primary" data-action="extract">Extract context</button>
-                    <button class="btn">Resolve</button>
-                    <button class="btn">Reply</button>
-                  </div>
-                </div>
-              </article>
-            </div>
-
-            <div class="line add focus">
-              <div class="line-no"></div>
-              <div class="line-no">48</div>
-              <div class="code"><span class="token-add">+</span> const reviewMetadata = pickReviewMetadata(input.pullRequest, thread);</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">49</div>
-              <div class="code"><span class="token-add">+</span> const instructions = buildAgentInstructions(input.agentTarget, thread.intent);</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">50</div>
-              <div class="code"><span class="token-add">+</span> return {</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">51</div>
-              <div class="code"><span class="token-add">+</span>   repository: input.repository.fullName,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">52</div>
-              <div class="code"><span class="token-add">+</span>   branch: input.branch.name,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">53</div>
-              <div class="code"><span class="token-add">+</span>   filePath: input.file.path,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">54</div>
-              <div class="code"><span class="token-add">+</span>   comment: normalizeCommentThread(thread),</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">55</div>
-              <div class="code"><span class="token-add">+</span>   diff: surroundingHunks,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">56</div>
-              <div class="code"><span class="token-add">+</span>   pullRequest: reviewMetadata,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">57</div>
-              <div class="code"><span class="token-add">+</span>   instructions,</div>
-            </div>
-            <div class="line add">
-              <div class="line-no"></div>
-              <div class="line-no">58</div>
-              <div class="code"><span class="token-add">+</span> };</div>
-            </div>
-            <div class="line">
-              <div class="line-no">38</div>
-              <div class="line-no">59</div>
-              <div class="code">}</div>
-            </div>
-          </div>
-        </section>
-
-        <aside class="review-panel" aria-label="GitHub pull request review">
-          <header class="review-header">
-            <h2 class="pr-title">PR #128 · AI-agent comment context</h2>
-            <div class="pr-meta">feature/context-comments → main · opened by jiunshinn · review requested</div>
-          </header>
-
-          <div class="review-content">
-            <section class="panel-card">
-              <div class="panel-card-head">
-                <strong>GitHub review state</strong>
-                <span class="chip selected">Files changed</span>
-              </div>
-              <div class="checks">
-                <div class="check-row"><span><span class="dot success"></span>Unit tests</span><span class="small-mono">passed</span></div>
-                <div class="check-row"><span><span class="dot success"></span>Typecheck</span><span class="small-mono">passed</span></div>
-                <div class="check-row"><span><span class="dot warn"></span>Review</span><span class="small-mono">4 unresolved</span></div>
-              </div>
-            </section>
-
-            <section class="panel-card">
-              <div class="panel-card-head">
-                <strong>Review timeline</strong>
-                <span class="small-mono">live</span>
-              </div>
-              <div class="timeline">
-                <div class="event">
-                  <span class="avatar">PL</span>
-                  <div>
-                    <p>Patchline attached branch metadata to the selected thread.</p>
-                    <div class="small-mono">context bundle ready · 09:41</div>
-                  </div>
-                </div>
-                <div class="event">
-                  <span class="avatar">JS</span>
-                  <div>
-                    <p>Jiun requested a smaller extraction boundary around the selected diff.</p>
-                    <div class="small-mono">inline comment · L47</div>
-                  </div>
-                </div>
-                <div class="event">
-                  <span class="avatar">GH</span>
-                  <div>
-                    <p>GitHub checks completed for commit <span class="small-mono">3f92a81</span>.</p>
-                    <div class="small-mono">remote status · 09:38</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel-card context-card">
-              <div class="panel-card-head">
-                <strong>Extracted context</strong>
+            <section class="agent-card">
+              <div class="panel-label">AI handoff</div>
+              <p>
+                Context is assembled from selected comments, nearby hunks,
+                branch metadata, and PR review state.
+              </p>
+              <div class="agent-targets">
                 <span class="chip selected">Codex</span>
+                <span class="chip">Cursor</span>
+                <span class="chip">Claude Code</span>
               </div>
-              <div class="context-options" aria-label="Context extraction scope">
-                <span class="chip selected">comment</span>
-                <span class="chip selected">nearby diff</span>
-                <span class="chip selected">PR state</span>
-                <span class="chip">full file</span>
-                <span class="chip">tests</span>
+            </section>
+
+            <section class="commit-box">
+              <div class="commit-title">
+                <span>Commit draft</span><span class="count">4 staged</span>
               </div>
-              <pre class="context-preview" id="contextPreview">Repository: open-design/app
+              <textarea class="commit-input" aria-label="Commit message draft">
+review: extract comment context for ai agents</textarea
+              >
+              <div class="commit-actions">
+                <button class="btn">Stage all</button>
+                <button class="btn">Commit</button>
+              </div>
+            </section>
+          </aside>
+
+          <aside class="files" aria-label="Changed files">
+            <input
+              class="search"
+              aria-label="Filter changed files"
+              placeholder="Filter files or comments"
+            />
+            <div class="file-groups">
+              <section>
+                <div class="file-section-title">Review focus</div>
+                <div class="file-list">
+                  <div class="file-row active">
+                    <span class="status modified">M</span>
+                    <span>src/review/context-extractor.ts</span>
+                    <span class="small-mono">+42</span>
+                  </div>
+                  <div class="file-row">
+                    <span class="status modified">M</span>
+                    <span>src/github/pull-request.ts</span>
+                    <span class="small-mono">+18</span>
+                  </div>
+                  <div class="file-row">
+                    <span class="status added">A</span>
+                    <span>src/agents/export-targets.ts</span>
+                    <span class="small-mono">+76</span>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div class="file-section-title">UI shell</div>
+                <div class="file-list">
+                  <div class="file-row">
+                    <span class="status modified">M</span>
+                    <span>components/diff/InlineThread.tsx</span>
+                    <span class="small-mono">+29</span>
+                  </div>
+                  <div class="file-row">
+                    <span class="status modified">M</span>
+                    <span>components/context/PreviewPanel.tsx</span>
+                    <span class="small-mono">+31</span>
+                  </div>
+                  <div class="file-row">
+                    <span class="status removed">D</span>
+                    <span>legacy/comment-exporter.ts</span>
+                    <span class="small-mono">-64</span>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div class="file-section-title">Tests</div>
+                <div class="file-list">
+                  <div class="file-row">
+                    <span class="status added">A</span>
+                    <span>tests/context-extractor.test.ts</span>
+                    <span class="small-mono">+88</span>
+                  </div>
+                  <div class="file-row">
+                    <span class="status modified">M</span>
+                    <span>tests/github-pr-review.test.ts</span>
+                    <span class="small-mono">+14</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </aside>
+
+          <section class="diff-area" aria-label="Diff review workspace">
+            <div class="diff-header">
+              <div class="diff-title">
+                <h1>context-extractor.ts</h1>
+                <p>
+                  src/review/context-extractor.ts · comment thread selected on
+                  lines 47–58
+                </p>
+              </div>
+              <div class="tab-strip" aria-label="Diff mode">
+                <button class="tab active">Unified</button>
+                <button class="tab">Split</button>
+                <button class="tab">Viewed</button>
+              </div>
+            </div>
+
+            <div class="diff-summary" aria-label="File review summary">
+              <div class="summary-tile">
+                <div class="value">+42</div>
+                <div class="label">Added lines</div>
+              </div>
+              <div class="summary-tile">
+                <div class="value">-11</div>
+                <div class="label">Removed lines</div>
+              </div>
+              <div class="summary-tile">
+                <div class="value">2</div>
+                <div class="label">Open comments</div>
+              </div>
+              <div class="summary-tile">
+                <div class="value">1</div>
+                <div class="label">Context bundle</div>
+              </div>
+            </div>
+
+            <div class="diff-table">
+              <div class="hunk-title">
+                <span
+                  >@@ -34,18 +42,34 @@ export function createContextBundle</span
+                >
+                <span>viewed by 3 reviewers</span>
+              </div>
+              <div class="line">
+                <div class="line-no">34</div>
+                <div class="line-no">42</div>
+                <div class="code">
+                  export function createContextBundle(input: ReviewSelection):
+                  AgentContext {
+                </div>
+              </div>
+              <div class="line">
+                <div class="line-no">35</div>
+                <div class="line-no">43</div>
+                <div class="code">const thread = input.selectedThread;</div>
+              </div>
+              <div class="line remove">
+                <div class="line-no">36</div>
+                <div class="line-no"></div>
+                <div class="code">
+                  <span class="token-remove">-</span> const prompt =
+                  thread.comments.map((comment) =&gt; comment.body).join('\n');
+                </div>
+              </div>
+              <div class="line remove">
+                <div class="line-no">37</div>
+                <div class="line-no"></div>
+                <div class="code">
+                  <span class="token-remove">-</span> return { prompt, filePath:
+                  input.file.path };
+                </div>
+              </div>
+              <div class="line add focus">
+                <div class="line-no"></div>
+                <div class="line-no">44</div>
+                <div class="code">
+                  <span class="token-add">+</span> const surroundingHunks =
+                  collectNearbyHunks(input.diff, thread.lineRange, {
+                </div>
+              </div>
+              <div class="line add focus">
+                <div class="line-no"></div>
+                <div class="line-no">45</div>
+                <div class="code">
+                  <span class="token-add">+</span> before: 24,
+                </div>
+              </div>
+              <div class="line add focus">
+                <div class="line-no"></div>
+                <div class="line-no">46</div>
+                <div class="code">
+                  <span class="token-add">+</span> after: 24,
+                </div>
+              </div>
+              <div class="line add focus">
+                <div class="line-no"></div>
+                <div class="line-no">47</div>
+                <div class="code"><span class="token-add">+</span> });</div>
+              </div>
+
+              <div class="inline-thread">
+                <div class="thread-spacer"></div>
+                <article class="thread-card">
+                  <div class="thread-head">
+                    <div class="comment-author">
+                      <span class="avatar">JS</span><span>Jiun Shin</span>
+                    </div>
+                    <span class="small-mono">pending review · L47</span>
+                  </div>
+                  <div class="thread-body">
+                    <p>
+                      When this context goes to Codex or Claude Code, preserve
+                      the selected comment plus the exact nearby diff. Don’t
+                      include the whole file unless the reviewer asks for it.
+                    </p>
+                    <div class="thread-actions">
+                      <button class="btn primary" data-action="extract">
+                        Extract context
+                      </button>
+                      <button class="btn">Resolve</button>
+                      <button class="btn">Reply</button>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="line add focus">
+                <div class="line-no"></div>
+                <div class="line-no">48</div>
+                <div class="code">
+                  <span class="token-add">+</span> const reviewMetadata =
+                  pickReviewMetadata(input.pullRequest, thread);
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">49</div>
+                <div class="code">
+                  <span class="token-add">+</span> const instructions =
+                  buildAgentInstructions(input.agentTarget, thread.intent);
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">50</div>
+                <div class="code">
+                  <span class="token-add">+</span> return {
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">51</div>
+                <div class="code">
+                  <span class="token-add">+</span> repository:
+                  input.repository.fullName,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">52</div>
+                <div class="code">
+                  <span class="token-add">+</span> branch: input.branch.name,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">53</div>
+                <div class="code">
+                  <span class="token-add">+</span> filePath: input.file.path,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">54</div>
+                <div class="code">
+                  <span class="token-add">+</span> comment:
+                  normalizeCommentThread(thread),
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">55</div>
+                <div class="code">
+                  <span class="token-add">+</span> diff: surroundingHunks,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">56</div>
+                <div class="code">
+                  <span class="token-add">+</span> pullRequest: reviewMetadata,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">57</div>
+                <div class="code">
+                  <span class="token-add">+</span> instructions,
+                </div>
+              </div>
+              <div class="line add">
+                <div class="line-no"></div>
+                <div class="line-no">58</div>
+                <div class="code"><span class="token-add">+</span> };</div>
+              </div>
+              <div class="line">
+                <div class="line-no">38</div>
+                <div class="line-no">59</div>
+                <div class="code">}</div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="review-panel" aria-label="GitHub pull request review">
+            <header class="review-header">
+              <h2 class="pr-title">PR #128 · AI-agent comment context</h2>
+              <div class="pr-meta">
+                feature/context-comments → main · opened by jiunshinn · review
+                requested
+              </div>
+            </header>
+
+            <div class="review-content">
+              <section class="panel-card">
+                <div class="panel-card-head">
+                  <strong>GitHub review state</strong>
+                  <span class="chip selected">Files changed</span>
+                </div>
+                <div class="checks">
+                  <div class="check-row">
+                    <span><span class="dot success"></span>Unit tests</span
+                    ><span class="small-mono">passed</span>
+                  </div>
+                  <div class="check-row">
+                    <span><span class="dot success"></span>Typecheck</span
+                    ><span class="small-mono">passed</span>
+                  </div>
+                  <div class="check-row">
+                    <span><span class="dot warn"></span>Review</span
+                    ><span class="small-mono">4 unresolved</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel-card">
+                <div class="panel-card-head">
+                  <strong>Review timeline</strong>
+                  <span class="small-mono">live</span>
+                </div>
+                <div class="timeline">
+                  <div class="event">
+                    <span class="avatar">PL</span>
+                    <div>
+                      <p>
+                        Patchline attached branch metadata to the selected
+                        thread.
+                      </p>
+                      <div class="small-mono">context bundle ready · 09:41</div>
+                    </div>
+                  </div>
+                  <div class="event">
+                    <span class="avatar">JS</span>
+                    <div>
+                      <p>
+                        Jiun requested a smaller extraction boundary around the
+                        selected diff.
+                      </p>
+                      <div class="small-mono">inline comment · L47</div>
+                    </div>
+                  </div>
+                  <div class="event">
+                    <span class="avatar">GH</span>
+                    <div>
+                      <p>
+                        GitHub checks completed for commit
+                        <span class="small-mono">3f92a81</span>.
+                      </p>
+                      <div class="small-mono">remote status · 09:38</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel-card context-card">
+                <div class="panel-card-head">
+                  <strong>Extracted context</strong>
+                  <span class="chip selected">Codex</span>
+                </div>
+                <div
+                  class="context-options"
+                  aria-label="Context extraction scope"
+                >
+                  <span class="chip selected">comment</span>
+                  <span class="chip selected">nearby diff</span>
+                  <span class="chip selected">PR state</span>
+                  <span class="chip">full file</span>
+                  <span class="chip">tests</span>
+                </div>
+                <pre class="context-preview" id="contextPreview">
+Repository: open-design/app
 Branch: feature/context-comments
 Pull request: #128 AI-agent comment context
 File: src/review/context-extractor.ts
@@ -1321,50 +1464,57 @@ Relevant diff:
 + const instructions = buildAgentInstructions(input.agentTarget, thread.intent);
 
 Ask for AI agent:
-Review whether the extraction boundary is sufficient for code review without leaking unrelated file context. Suggest a narrower or safer data shape if needed.</pre>
-              <div class="context-actions">
-                <button class="btn primary" data-action="copy-context">Copy context</button>
-                <button class="btn">Open in agent</button>
-              </div>
-            </section>
-          </div>
-        </aside>
-      </main>
-    </section>
-  </div>
+Review whether the extraction boundary is sufficient for code review without leaking unrelated file context. Suggest a narrower or safer data shape if needed.</pre
+                >
+                <div class="context-actions">
+                  <button class="btn primary" data-action="copy-context">
+                    Copy context
+                  </button>
+                  <button class="btn">Open in agent</button>
+                </div>
+              </section>
+            </div>
+          </aside>
+        </main>
+      </section>
+    </div>
 
-  <div class="toast" id="toast" role="status">Context copied for agent handoff</div>
+    <div class="toast" id="toast" role="status">
+      Context copied for agent handoff
+    </div>
 
-  <script>
-    const toast = document.getElementById('toast');
-    const contextPreview = document.getElementById('contextPreview');
+    <script>
+      const toast = document.getElementById("toast");
+      const contextPreview = document.getElementById("contextPreview");
 
-    function showToast(message) {
-      toast.textContent = message;
-      toast.classList.add('visible');
-      window.clearTimeout(showToast.timer);
-      showToast.timer = window.setTimeout(() => {
-        toast.classList.remove('visible');
-      }, 1800);
-    }
-
-    document.addEventListener('click', async (event) => {
-      const target = event.target.closest('[data-action]');
-      if (!target) return;
-
-      if (target.dataset.action === 'extract') {
-        showToast('Selected comment context extracted');
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("visible");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => {
+          toast.classList.remove("visible");
+        }, 1800);
       }
 
-      if (target.dataset.action === 'copy-context') {
-        try {
-          await navigator.clipboard.writeText(contextPreview.textContent.trim());
-          showToast('Context copied for agent handoff');
-        } catch (error) {
-          showToast('Context ready to copy');
+      document.addEventListener("click", async (event) => {
+        const target = event.target.closest("[data-action]");
+        if (!target) return;
+
+        if (target.dataset.action === "extract") {
+          showToast("Selected comment context extracted");
         }
-      }
-    });
-  </script>
-</body>
+
+        if (target.dataset.action === "copy-context") {
+          try {
+            await navigator.clipboard.writeText(
+              contextPreview.textContent.trim(),
+            );
+            showToast("Context copied for agent handoff");
+          } catch (error) {
+            showToast("Context ready to copy");
+          }
+        }
+      });
+    </script>
+  </body>
 </html>

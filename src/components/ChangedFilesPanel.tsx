@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
@@ -11,12 +11,18 @@ const GROUP_TITLES: Record<WorkingTreeGroup, string> = {
   untracked: 'Untracked',
 };
 
+const GROUP_ORDER: WorkingTreeGroup[] = ['conflicted', 'staged', 'unstaged', 'untracked'];
+
 export default function ChangedFilesPanel() {
-  const { state, dispatch, loadDiff, refresh, toast } = useApp();
-  const files = state.files;
-  const groups: WorkingTreeGroup[] = ['conflicted', 'staged', 'unstaged', 'untracked'];
+  const { state, dispatch, loadDiff, refresh, toast, logActivity } = useApp();
+  const filter = state.fileFilter.trim().toLowerCase();
+  const files = useMemo(
+    () => (filter ? state.files.filter((f) => f.path.toLowerCase().includes(filter)) : state.files),
+    [state.files, filter],
+  );
+
   const byGroup = new Map<WorkingTreeGroup, ChangedFile[]>();
-  for (const g of groups) byGroup.set(g, []);
+  for (const g of GROUP_ORDER) byGroup.set(g, []);
   for (const f of files) byGroup.get(f.group)!.push(f);
 
   const repoId = state.repo!.id;
@@ -30,6 +36,7 @@ export default function ChangedFilesPanel() {
   const stageFile = async (f: ChangedFile) => {
     try {
       await api.stageFile(repoId, f.path);
+      logActivity({ kind: 'file_staged', message: 'Staged', detail: f.path });
       await refresh();
     } catch (e) {
       toast('error', (e as Error).message);
@@ -38,6 +45,7 @@ export default function ChangedFilesPanel() {
   const unstageFile = async (f: ChangedFile) => {
     try {
       await api.unstageFile(repoId, f.path);
+      logActivity({ kind: 'file_unstaged', message: 'Unstaged', detail: f.path });
       await refresh();
     } catch (e) {
       toast('error', (e as Error).message);
@@ -51,6 +59,7 @@ export default function ChangedFilesPanel() {
         toast('error', (e as Error).message);
       }
     }
+    logActivity({ kind: 'file_staged', message: `Staged all ${GROUP_TITLES[group].toLowerCase()}` });
     await refresh();
   };
   const unstageAll = async () => {
@@ -61,99 +70,123 @@ export default function ChangedFilesPanel() {
         toast('error', (e as Error).message);
       }
     }
+    logActivity({ kind: 'file_unstaged', message: 'Unstaged all' });
     await refresh();
   };
 
   const fileStateMap = new Map(state.fileStates.map((s) => [s.file_path, s.status] as const));
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto">
-      {groups.map((g) => {
-        const list = byGroup.get(g)!;
-        if (!list.length) return null;
-        return (
-          <div key={g}>
-            <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-text-muted flex items-center justify-between sticky top-0 bg-bg-panel z-10 border-b border-border-subtle">
-              <span>
-                {GROUP_TITLES[g]} <span className="text-text-muted">({list.length})</span>
-              </span>
-              {g === 'unstaged' || g === 'untracked' ? (
-                <button className="btn-ghost py-0 px-1 text-xs" onClick={() => void stageAll(g)}>
-                  Stage all
-                </button>
-              ) : g === 'staged' ? (
-                <button className="btn-ghost py-0 px-1 text-xs" onClick={() => void unstageAll()}>
-                  Unstage all
-                </button>
-              ) : null}
-            </div>
-            <ul>
-              {list.map((f) => {
-                const isSelected = state.selectedFile === f.path && (state.diffStaged === (f.group === 'staged'));
-                const stateLabel = fileStateMap.get(f.path);
-                return (
-                  <li
-                    key={`${g}::${f.path}`}
-                    className={cn(
-                      'group px-2 py-1 cursor-pointer flex items-center gap-2 text-sm',
-                      isSelected ? 'bg-bg-hover' : 'hover:bg-bg-subtle',
-                    )}
-                    onClick={() => void onClickFile(f)}
-                  >
-                    <StatusBadge file={f} />
-                    <span className="truncate flex-1" title={f.path}>
-                      {f.renamed && f.oldPath && (
-                        <span className="text-text-muted">{f.oldPath} → </span>
+    <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+      <input
+        className="input"
+        aria-label="Filter files"
+        placeholder="Filter files or comments"
+        value={state.fileFilter}
+        onChange={(e) => dispatch({ type: 'setFileFilter', value: e.target.value })}
+      />
+      <div className="mt-3.5 grid gap-3.5">
+        {GROUP_ORDER.map((g) => {
+          const list = byGroup.get(g)!;
+          if (!list.length) return null;
+          return (
+            <section key={g}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="section-label">
+                  {GROUP_TITLES[g]}{' '}
+                  <span className="text-text-muted font-mono normal-case tracking-normal">({list.length})</span>
+                </div>
+                {g === 'unstaged' || g === 'untracked' ? (
+                  <button className="btn-ghost text-[11px] h-6 px-2" onClick={() => void stageAll(g)}>
+                    Stage all
+                  </button>
+                ) : g === 'staged' ? (
+                  <button className="btn-ghost text-[11px] h-6 px-2" onClick={() => void unstageAll()}>
+                    Unstage all
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid gap-[3px]">
+                {list.map((f) => {
+                  const isSelected =
+                    state.selectedFile === f.path && state.diffStaged === (f.group === 'staged');
+                  const stateLabel = fileStateMap.get(f.path);
+                  return (
+                    <div
+                      key={`${g}::${f.path}`}
+                      className={cn(
+                        'group grid grid-cols-[20px_minmax(0,1fr)_auto] gap-2 items-center px-2 py-1.5 rounded-lg text-sm cursor-pointer min-w-0',
+                        isSelected
+                          ? 'bg-bg-panel border border-border shadow-card'
+                          : 'border border-transparent hover:bg-bg-subtle',
                       )}
-                      {f.path}
-                    </span>
-                    {stateLabel === 'reviewed' && <span className="text-success text-xs">✓</span>}
-                    {g !== 'conflicted' && (
-                      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                        {g === 'staged' ? (
-                          <button
-                            className="btn-ghost py-0 px-1 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void unstageFile(f);
-                            }}
-                          >
-                            −
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-ghost py-0 px-1 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void stageFile(f);
-                            }}
-                          >
-                            +
-                          </button>
+                      onClick={() => void onClickFile(f)}
+                    >
+                      <StatusBadge file={f} />
+                      <span className="truncate" title={f.path}>
+                        {f.renamed && f.oldPath && (
+                          <span className="text-text-muted">{f.oldPath} → </span>
                         )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                        {f.path}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        {stateLabel === 'reviewed' && (
+                          <span className="text-success text-xs" title="Reviewed">
+                            ✓
+                          </span>
+                        )}
+                        {g !== 'conflicted' && (
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            {g === 'staged' ? (
+                              <button
+                                className="btn-ghost h-6 w-6 p-0 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void unstageFile(f);
+                                }}
+                                title="Unstage"
+                              >
+                                −
+                              </button>
+                            ) : (
+                              <button
+                                className="btn-ghost h-6 w-6 p-0 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void stageFile(f);
+                                }}
+                                title="Stage"
+                              >
+                                +
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+        {!files.length && (
+          <div className="p-4 text-sm text-text-muted">
+            {filter ? 'No files match your filter.' : 'No changes. Working tree is clean.'}
           </div>
-        );
-      })}
-      {!files.length && (
-        <div className="p-4 text-sm text-text-muted">No changes. Working tree is clean.</div>
-      )}
-    </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
 function StatusBadge({ file }: { file: ChangedFile }) {
   const code = file.group === 'staged' ? file.indexStatus : file.worktreeStatus;
   const label = labelFor(code, file.group);
-  const color = colorFor(code);
+  const color = colorFor(code, file.group);
   return (
     <span
-      className={cn('w-4 h-4 inline-flex items-center justify-center text-[10px] font-bold rounded', color)}
+      className={cn('w-5 text-center font-mono text-xs font-semibold', color)}
       title={`index:${file.indexStatus} worktree:${file.worktreeStatus}`}
     >
       {label}
@@ -180,19 +213,23 @@ function labelFor(code: string, group: WorkingTreeGroup): string {
       return code || '·';
   }
 }
-function colorFor(code: string): string {
+function colorFor(code: string, group: WorkingTreeGroup): string {
+  if (group === 'conflicted') return 'text-danger';
+  if (group === 'untracked') return 'text-accent';
   switch (code) {
     case 'M':
-      return 'bg-amber-500/20 text-amber-300';
+      return 'text-warn';
     case 'A':
-      return 'bg-emerald-500/20 text-emerald-300';
+      return 'text-success';
     case 'D':
-      return 'bg-red-500/20 text-red-300';
+      return 'text-danger';
     case 'R':
-      return 'bg-blue-500/20 text-blue-300';
+      return 'text-accent';
+    case 'C':
+      return 'text-accent';
     case '?':
-      return 'bg-purple-500/20 text-purple-300';
+      return 'text-accent';
     default:
-      return 'bg-bg-subtle text-text-muted';
+      return 'text-text-muted';
   }
 }

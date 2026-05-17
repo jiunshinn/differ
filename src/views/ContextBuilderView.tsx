@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
+import LeftRail from '../components/LeftRail';
 
 export default function ContextBuilderView() {
-  const { state, dispatch, toast } = useApp();
+  const { state, dispatch, toast, logActivity } = useApp();
   const [task, setTask] = useState('Verify the selected changes and improve where appropriate.');
   const [testCommand, setTestCommand] = useState('');
   const [includeRepoMetadata, setIncludeRepoMetadata] = useState(true);
@@ -29,20 +30,26 @@ export default function ContextBuilderView() {
   );
 
   useEffect(() => {
-    void generate();
+    if (state.repo && state.session) void generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     task,
     testCommand,
     includeRepoMetadata,
     includeFullFiles,
+    state.session?.id,
     state.selectedCommentIds.join('|'),
     state.selectedFilePaths.join('|'),
     state.selectedHunkKeys.join('|'),
   ]);
 
   if (!state.repo || !state.session) {
-    return <div className="p-6 text-text-muted">Open a repository first.</div>;
+    return (
+      <div className="h-full grid grid-cols-[220px_minmax(0,1fr)]">
+        <LeftRail />
+        <div className="p-8 text-text-muted">Open a repository first.</div>
+      </div>
+    );
   }
 
   const generate = async () => {
@@ -69,6 +76,7 @@ export default function ContextBuilderView() {
   const copy = async () => {
     try {
       await api.copyContext(preview);
+      logActivity({ kind: 'context_copied', message: 'Copied context to clipboard' });
       toast('success', 'Context copied to clipboard');
     } catch (e) {
       toast('error', (e as Error).message);
@@ -96,19 +104,21 @@ export default function ContextBuilderView() {
   };
 
   return (
-    <div className="h-full flex">
-      <div className="w-[420px] border-r border-border p-3 flex flex-col gap-3 overflow-auto">
+    <div className="h-full w-full grid grid-cols-[220px_420px_minmax(0,1fr)] min-h-0 bg-bg-panel">
+      <LeftRail />
+
+      <aside className="overflow-auto border-r border-border p-4 bg-bg grid gap-3.5 content-start">
         <div>
-          <div className="text-xs uppercase tracking-wide text-text-muted mb-1">Task</div>
+          <div className="section-label mb-1.5">Task</div>
           <textarea
-            className="input font-sans min-h-[110px]"
+            className="input min-h-[110px] font-sans resize-y"
             value={task}
             onChange={(e) => setTask(e.target.value)}
             placeholder="Describe what you want the AI agent to do"
           />
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wide text-text-muted mb-1">Test command (optional)</div>
+          <div className="section-label mb-1.5">Test command (optional)</div>
           <input
             className="input font-mono"
             value={testCommand}
@@ -116,19 +126,28 @@ export default function ContextBuilderView() {
             placeholder="e.g. npm test"
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Check label="Include repository metadata" value={includeRepoMetadata} onChange={setIncludeRepoMetadata} />
-          <Check label="Include full file contents for selected files" value={includeFullFiles} onChange={setIncludeFullFiles} />
+          <Check
+            label="Include full file contents for selected files"
+            value={includeFullFiles}
+            onChange={setIncludeFullFiles}
+          />
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-xs uppercase tracking-wide text-text-muted">Comments</div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="section-label">Comments</div>
             <div className="flex gap-1">
               {(['all', 'open', 'ask-ai'] as const).map((f) => (
                 <button
                   key={f}
-                  className={cn('btn-ghost text-[11px]', filter === f && 'text-accent bg-bg-hover')}
+                  className={cn(
+                    'h-6 px-1.5 rounded-md text-[11px] border',
+                    filter === f
+                      ? 'bg-bg-panel border-border text-text-primary'
+                      : 'border-transparent text-text-muted hover:text-text-primary',
+                  )}
                   onClick={() => setFilter(f)}
                 >
                   {f}
@@ -136,8 +155,8 @@ export default function ContextBuilderView() {
               ))}
             </div>
           </div>
-          <div className="panel p-2 max-h-[260px] overflow-auto">
-            {filteredComments.length === 0 && <div className="text-xs text-text-muted">No comments.</div>}
+          <div className="panel-card p-2 max-h-[260px] overflow-auto">
+            {filteredComments.length === 0 && <div className="text-xs text-text-muted px-1.5 py-1">No comments.</div>}
             {filteredComments.map((c) => (
               <label key={c.id} className="flex items-start gap-2 py-1 text-xs cursor-pointer">
                 <input
@@ -151,7 +170,7 @@ export default function ContextBuilderView() {
                   <div className="text-text-muted">
                     {c.target_kind}
                     {c.line_number ? ` L${c.line_number}` : ''}
-                    {c.label && <span className="ml-1 tag">{c.label}</span>}
+                    {c.label && <span className="ml-1 chip">{c.label}</span>}
                   </div>
                   <div className="whitespace-pre-wrap">{c.body}</div>
                 </div>
@@ -161,9 +180,9 @@ export default function ContextBuilderView() {
         </div>
 
         <div>
-          <div className="text-xs uppercase tracking-wide text-text-muted mb-1">Files</div>
-          <div className="panel p-2 max-h-[180px] overflow-auto">
-            {state.files.length === 0 && <div className="text-xs text-text-muted">No changed files.</div>}
+          <div className="section-label mb-1.5">Files</div>
+          <div className="panel-card p-2 max-h-[180px] overflow-auto">
+            {state.files.length === 0 && <div className="text-xs text-text-muted px-1.5 py-1">No changed files.</div>}
             {state.files.map((f) => (
               <label key={`${f.group}::${f.path}`} className="flex items-center gap-2 py-0.5 text-xs cursor-pointer">
                 <input
@@ -180,25 +199,26 @@ export default function ContextBuilderView() {
         </div>
 
         <div>
-          <div className="text-xs uppercase tracking-wide text-text-muted mb-1">Hunks</div>
-          <div className="panel p-2 max-h-[140px] overflow-auto">
+          <div className="section-label mb-1.5">Hunks</div>
+          <div className="panel-card p-2 max-h-[140px] overflow-auto">
             {state.selectedHunkKeys.length === 0 && (
-              <div className="text-xs text-text-muted">
+              <div className="text-xs text-text-muted px-1.5 py-1">
                 Tick hunk checkboxes in the diff view to include them.
               </div>
             )}
             {state.selectedHunkKeys.map((k) => (
-              <div key={k} className="text-xs font-mono py-0.5 truncate">
+              <div key={k} className="text-xs font-mono py-0.5 truncate" title={k}>
                 {k}
               </div>
             ))}
           </div>
         </div>
-      </div>
-      <div className="flex-1 min-w-0 flex flex-col">
-        <div className="h-9 px-3 flex items-center gap-2 border-b border-border">
-          <div className="text-sm text-text-secondary">Preview</div>
-          <div className="text-xs text-text-muted">{preview.length} chars</div>
+      </aside>
+
+      <section className="min-h-0 flex flex-col">
+        <header className="h-12 px-4 flex items-center gap-2 border-b border-border bg-bg-panel">
+          <div className="text-sm font-semibold tracking-tight">Preview</div>
+          <div className="small-mono">{preview.length} chars</div>
           <div className="flex-1" />
           <button className="btn" disabled={busy} onClick={() => void generate()}>
             Regenerate
@@ -209,14 +229,14 @@ export default function ContextBuilderView() {
           <button className="btn-primary" disabled={!preview} onClick={() => void copy()}>
             Copy markdown
           </button>
-        </div>
+        </header>
         <textarea
-          className="flex-1 bg-bg font-mono text-xs leading-5 p-3 outline-none resize-none"
+          className="flex-1 bg-bg font-mono text-xs leading-5 p-4 outline-none resize-none text-text-primary"
           value={preview}
           readOnly
           spellCheck={false}
         />
-      </div>
+      </section>
     </div>
   );
 }

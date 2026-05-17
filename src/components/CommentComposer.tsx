@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
+import { cn } from '../utils/cn';
 import type { CommentLabel, CommentTargetKind } from '@shared/types';
 
 const LABELS: { label: string; value: CommentLabel }[] = [
@@ -28,7 +29,7 @@ export default function CommentComposer({
   hunkHeader: string | null;
   onClose: () => void;
 }) {
-  const { state, loadComments, toast } = useApp();
+  const { state, loadComments, logActivity, toast } = useApp();
   const [body, setBody] = useState('');
   const [label, setLabel] = useState<CommentLabel>(null);
   const [busy, setBusy] = useState(false);
@@ -53,6 +54,11 @@ export default function CommentComposer({
         body: body.trim(),
         label,
       });
+      logActivity({
+        kind: 'comment_created',
+        message: `Added ${target} comment`,
+        detail: target === 'line' && line ? `${filePath} L${line}` : filePath,
+      });
       await loadComments();
       onClose();
     } catch (e) {
@@ -67,14 +73,14 @@ export default function CommentComposer({
       ? 'File-level comment'
       : target === 'hunk'
       ? `Hunk comment ${hunkHeader ?? ''}`
-      : `Line comment ${side === 'old' ? '-' : '+'}${line}`;
+      : `Line comment ${side === 'old' ? '−' : '+'}${line}`;
 
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[560px] panel p-4">
-          <Dialog.Title className="text-base font-semibold mb-1">{anchorLabel}</Dialog.Title>
+        <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[560px] panel-card p-4 shadow-raised">
+          <Dialog.Title className="text-base font-semibold mb-1 tracking-tight">{anchorLabel}</Dialog.Title>
           <div className="text-xs text-text-muted mb-3 font-mono truncate">{filePath}</div>
           <textarea
             className="input min-h-[140px] font-sans"
@@ -86,14 +92,15 @@ export default function CommentComposer({
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void save();
             }}
           />
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-xs text-text-muted">Label:</span>
+          <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs text-text-muted mr-1">Label:</span>
             {LABELS.map((l) => (
               <button
                 key={l.label}
-                className={
-                  'btn-ghost text-xs ' + (label === l.value ? 'bg-bg-hover text-accent' : '')
-                }
+                className={cn(
+                  'btn-ghost h-7 px-2 text-xs',
+                  label === l.value && 'bg-bg-subtle text-accent border-accent border',
+                )}
                 onClick={() => setLabel(l.value)}
               >
                 {l.label}

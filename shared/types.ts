@@ -174,6 +174,28 @@ export interface GithubPullRequestDetail extends GithubPullRequestSummary {
   deletions: number;
 }
 
+export type GithubCheckStatus = 'queued' | 'in_progress' | 'completed';
+export type GithubCheckConclusion =
+  | 'success'
+  | 'failure'
+  | 'neutral'
+  | 'cancelled'
+  | 'skipped'
+  | 'timed_out'
+  | 'action_required'
+  | 'stale'
+  | null;
+
+export interface GithubCheckRun {
+  id: number;
+  name: string;
+  status: GithubCheckStatus;
+  conclusion: GithubCheckConclusion;
+  detailsUrl: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export type GithubReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
 export interface GithubReviewCommentInput {
@@ -277,6 +299,7 @@ export const IpcChannels = {
   ghPrCheckout: 'gh:prCheckout',
   ghPrSubmitReview: 'gh:prSubmitReview',
   ghPrOpenInBrowser: 'gh:prOpenInBrowser',
+  ghPrChecks: 'gh:prChecks',
 
   // System
   clipboardWrite: 'system:clipboardWrite',

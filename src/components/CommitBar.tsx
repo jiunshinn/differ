@@ -3,7 +3,7 @@ import { useApp } from '../state/AppStore';
 import { api } from '../api';
 
 export default function CommitBar() {
-  const { state, refresh, toast } = useApp();
+  const { state, refresh, toast, logActivity } = useApp();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const stagedCount = useMemo(
@@ -24,9 +24,11 @@ export default function CommitBar() {
     setBusy(true);
     try {
       await api.commit(state.repo.id, message.trim());
+      const subject = message.trim().split('\n')[0]!;
       setMessage('');
       await refresh();
       toast('success', 'Committed');
+      logActivity({ kind: 'commit', message: 'Commit', detail: subject });
     } catch (e) {
       toast('error', (e as Error).message);
     } finally {
@@ -42,6 +44,7 @@ export default function CommitBar() {
       setMessage('');
       await refresh();
       toast('success', 'Amended last commit');
+      logActivity({ kind: 'commit', message: 'Amended last commit' });
     } catch (e) {
       toast('error', (e as Error).message);
     } finally {
@@ -50,12 +53,13 @@ export default function CommitBar() {
   };
 
   return (
-    <div className="p-2 border-t border-border bg-bg-panel">
-      <div className="text-xs text-text-muted mb-1">
-        Staged: <span className="text-text-secondary">{stagedCount}</span>
+    <section className="panel-card p-3">
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="font-semibold tracking-tight">Commit draft</div>
+        <span className="text-xs text-text-muted font-mono tabular-nums">{stagedCount} staged</span>
       </div>
       <textarea
-        className="input font-mono min-h-[68px] resize-y"
+        className="input min-h-[72px] resize-none font-sans leading-5"
         placeholder="Commit message"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
@@ -63,14 +67,14 @@ export default function CommitBar() {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void commit();
         }}
       />
-      <div className="mt-2 flex gap-1">
-        <button className="btn-primary flex-1" disabled={busy} onClick={() => void commit()}>
-          Commit <span className="kbd ml-1">⌘↵</span>
-        </button>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
         <button className="btn" disabled={busy} onClick={() => void amend()}>
           Amend
         </button>
+        <button className="btn-primary" disabled={busy} onClick={() => void commit()}>
+          Commit
+        </button>
       </div>
-    </div>
+    </section>
   );
 }

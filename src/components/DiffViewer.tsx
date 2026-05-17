@@ -8,7 +8,7 @@ import type { DiffHunk, DiffLine, FileDiff, ReviewComment } from '@shared/types'
 type Mode = 'unified' | 'split';
 
 export default function DiffViewer() {
-  const { state, dispatch, loadDiff, refresh, toast } = useApp();
+  const { state, dispatch, loadDiff, refresh, toast, logActivity } = useApp();
   const [composer, setComposer] = useState<null | {
     target: 'line' | 'hunk' | 'file';
     side: 'old' | 'new' | 'none';
@@ -21,20 +21,21 @@ export default function DiffViewer() {
 
   if (!selected) {
     return (
-      <div className="flex-1 flex items-center justify-center text-text-muted">
+      <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
         Select a file to view its diff.
       </div>
     );
   }
   if (!diff) {
     return (
-      <div className="flex-1 flex items-center justify-center text-text-muted">
+      <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
         Loading diff…
       </div>
     );
   }
 
   const fileComments = state.comments.filter((c) => c.file_path === selected);
+  const openComments = fileComments.filter((c) => c.status === 'open').length;
 
   const repoId = state.repo!.id;
   const sessionId = state.session?.id;
@@ -44,6 +45,7 @@ export default function DiffViewer() {
   const stageHunk = async (hunkHeader: string) => {
     try {
       await api.stageHunk(repoId, selected, hunkHeader);
+      logActivity({ kind: 'file_staged', message: 'Staged hunk', detail: `${selected} ${hunkHeader}` });
       await refresh();
       await loadDiff(selected);
     } catch (e) {
@@ -53,6 +55,7 @@ export default function DiffViewer() {
   const unstageHunk = async (hunkHeader: string) => {
     try {
       await api.unstageHunk(repoId, selected, hunkHeader);
+      logActivity({ kind: 'file_unstaged', message: 'Unstaged hunk', detail: `${selected} ${hunkHeader}` });
       await refresh();
       await loadDiff(selected);
     } catch (e) {
@@ -67,25 +70,43 @@ export default function DiffViewer() {
     await api.setFileState(sessionId, selected, next);
     const states = await api.getFileStates(sessionId);
     dispatch({ type: 'setFileStates', states });
+    if (next === 'reviewed') {
+      logActivity({ kind: 'file_reviewed', message: 'Marked reviewed', detail: selected });
+    }
   };
 
   const isReviewed = state.fileStates.find((fs) => fs.file_path === selected)?.status === 'reviewed';
 
+  let added = 0;
+  let removed = 0;
+  for (const h of diff.hunks) {
+    for (const l of h.lines) {
+      if (l.kind === 'add') added++;
+      else if (l.kind === 'del') removed++;
+    }
+  }
+  const selectedHunkCount = state.selectedHunkKeys.filter((k) => k.startsWith(`${selected}::`)).length;
+  const baseName = selected.split('/').pop() ?? selected;
+  const dirName = selected.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '';
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div className="h-9 px-3 flex items-center gap-2 border-b border-border bg-bg-panel">
-        <div className="font-mono text-xs text-text-secondary truncate flex-1">
-          {diff.oldPath && diff.oldPath !== diff.filePath && (
-            <span className="text-text-muted">{diff.oldPath} → </span>
-          )}
-          {diff.filePath}
-          {state.diffStaged && <span className="ml-2 tag">staged</span>}
-          {diff.isNew && <span className="ml-2 tag">new</span>}
-          {diff.isDeleted && <span className="ml-2 tag">deleted</span>}
-          {diff.isRenamed && <span className="ml-2 tag">renamed</span>}
-          {diff.isBinary && <span className="ml-2 tag">binary</span>}
+    <section className="diff-area min-h-0 overflow-auto bg-bg-panel grid grid-rows-[auto_auto_1fr]">
+      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto] gap-4 items-center px-4 py-3 bg-bg-panel border-b border-border">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight leading-tight truncate">{baseName}</h1>
+          <p className="mt-0.5 text-xs text-text-muted font-mono truncate">
+            {dirName && `${dirName}/`}
+            {diff.oldPath && diff.oldPath !== diff.filePath && (
+              <span className="text-text-muted">{diff.oldPath} → </span>
+            )}
+            {state.diffStaged && <span className="ml-2 tag">staged</span>}
+            {diff.isNew && <span className="ml-2 tag">new</span>}
+            {diff.isDeleted && <span className="ml-2 tag">deleted</span>}
+            {diff.isRenamed && <span className="ml-2 tag">renamed</span>}
+            {diff.isBinary && <span className="ml-2 tag">binary</span>}
+          </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <ToggleGroup
             value={state.diffMode}
             onChange={(v) => setMode(v as Mode)}
@@ -95,7 +116,7 @@ export default function DiffViewer() {
             ]}
           />
           <button
-            className={cn('btn-ghost', state.ignoreWhitespace && 'text-accent')}
+            className={cn('btn h-8', state.ignoreWhitespace && 'text-accent border-accent')}
             onClick={() => {
               dispatch({ type: 'setIgnoreWhitespace', value: !state.ignoreWhitespace });
               void loadDiff(selected);
@@ -105,28 +126,32 @@ export default function DiffViewer() {
             WS
           </button>
           <button
-            className={cn('btn-ghost', state.diffStaged && 'text-accent')}
-            onClick={() => {
-              dispatch({ type: 'setDiffStaged', staged: !state.diffStaged });
-              void loadDiff(selected);
-            }}
-            title="Toggle staged view"
+            className="btn h-8"
+            onClick={() => setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null })}
           >
-            Staged
-          </button>
-          <button className="btn" onClick={() => setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null })}>
             Comment file
           </button>
-          <button className={cn('btn', isReviewed && 'bg-success/20 border-success text-emerald-200')} onClick={() => void toggleReviewed()}>
+          <button
+            className={cn('btn h-8', isReviewed && 'bg-success/10 border-success text-success')}
+            onClick={() => void toggleReviewed()}
+          >
             {isReviewed ? 'Reviewed ✓' : 'Mark reviewed'}
           </button>
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+
+      <div className="px-4 pt-3.5 pb-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <SummaryTile value={`+${added}`} label="Added lines" tone="success" />
+        <SummaryTile value={`−${removed}`} label="Removed lines" tone="danger" />
+        <SummaryTile value={openComments} label="Open comments" tone={openComments ? 'warn' : 'neutral'} />
+        <SummaryTile value={selectedHunkCount} label="Selected hunks" tone={selectedHunkCount ? 'accent' : 'neutral'} />
+      </div>
+
+      <div className="px-4 pb-4 grid gap-3.5">
         {diff.isBinary ? (
-          <div className="p-6 text-sm text-text-muted">Binary file — diff not shown.</div>
+          <div className="panel-card p-6 text-sm text-text-muted">Binary file — diff not shown.</div>
         ) : diff.hunks.length === 0 ? (
-          <div className="p-6 text-sm text-text-muted">No textual changes.</div>
+          <div className="panel-card p-6 text-sm text-text-muted">No textual changes.</div>
         ) : (
           diff.hunks.map((h) => (
             <HunkBlock
@@ -148,6 +173,7 @@ export default function DiffViewer() {
           ))
         )}
       </div>
+
       {composer && sessionId && (
         <CommentComposer
           filePath={selected}
@@ -158,6 +184,33 @@ export default function DiffViewer() {
           onClose={() => setComposer(null)}
         />
       )}
+    </section>
+  );
+}
+
+function SummaryTile({
+  value,
+  label,
+  tone,
+}: {
+  value: string | number;
+  label: string;
+  tone: 'success' | 'danger' | 'warn' | 'accent' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'success'
+      ? 'text-success'
+      : tone === 'danger'
+      ? 'text-danger'
+      : tone === 'warn'
+      ? 'text-warn'
+      : tone === 'accent'
+      ? 'text-accent'
+      : 'text-text-primary';
+  return (
+    <div className="panel-card p-3">
+      <div className={cn('font-mono text-xl leading-tight tabular-nums', toneClass)}>{value}</div>
+      <div className="mt-1 text-xs text-text-muted">{label}</div>
     </div>
   );
 }
@@ -172,13 +225,15 @@ function ToggleGroup({
   options: { label: string; value: string }[];
 }) {
   return (
-    <div className="inline-flex bg-bg-subtle rounded border border-border p-0.5">
+    <div className="inline-flex bg-bg border border-border rounded-lg p-[3px] gap-1">
       {options.map((o) => (
         <button
           key={o.value}
           className={cn(
-            'px-2 py-0.5 text-xs rounded',
-            value === o.value ? 'bg-bg-hover text-text-primary' : 'text-text-secondary hover:text-text-primary',
+            'min-h-[28px] px-2.5 rounded-md text-xs font-medium',
+            value === o.value
+              ? 'bg-bg-panel text-text-primary border border-border'
+              : 'text-text-muted hover:text-text-primary',
           )}
           onClick={() => onChange(o.value)}
         >
@@ -213,8 +268,9 @@ function HunkBlock({
   const { state, dispatch } = useApp();
   const hunkKey = `${file.filePath}::${hunk.header}`;
   const selected = state.selectedHunkKeys.includes(hunkKey);
+  const hunkComments = comments.filter((c) => c.target_kind === 'hunk' && c.hunk_header === hunk.header);
   return (
-    <div className="border-b border-border-subtle">
+    <article className="panel-card">
       <div className="hunk-header">
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
@@ -222,19 +278,19 @@ function HunkBlock({
             checked={selected}
             onChange={() => dispatch({ type: 'toggleHunkSelection', key: hunkKey })}
           />
-          <span className="font-mono">{hunk.header}</span>
+          <span className="font-mono truncate">{hunk.header}</span>
         </label>
-        <div className="flex items-center gap-2">
-          <button className="btn-ghost text-xs py-0" onClick={onAddHunkComment}>
+        <div className="flex items-center gap-1">
+          <button className="btn-ghost text-xs h-7 px-2" onClick={onAddHunkComment}>
             Comment hunk
           </button>
           {staged ? (
-            <button className="btn-ghost text-xs py-0" onClick={onUnstage}>
-              Unstage hunk
+            <button className="btn-ghost text-xs h-7 px-2" onClick={onUnstage}>
+              Unstage
             </button>
           ) : (
-            <button className="btn-ghost text-xs py-0" onClick={onStage}>
-              Stage hunk
+            <button className="btn-ghost text-xs h-7 px-2" onClick={onStage}>
+              Stage
             </button>
           )}
         </div>
@@ -249,7 +305,10 @@ function HunkBlock({
       ) : (
         <SplitHunk file={file} hunk={hunk} comments={comments} onAddLineComment={onAddLineComment} />
       )}
-    </div>
+      {hunkComments.map((c) => (
+        <InlineCommentRow key={c.id} comment={c} indent="hunk" />
+      ))}
+    </article>
   );
 }
 
@@ -301,8 +360,16 @@ function UnifiedRow({
 }) {
   const cls =
     line.kind === 'add' ? 'add' : line.kind === 'del' ? 'del' : line.kind === 'meta' ? 'context italic text-text-muted' : 'context';
-  // Prefer new side for add/context; old side for del. If both null (meta), skip comment hooks.
-  const side: 'old' | 'new' | null = line.kind === 'del' ? 'old' : line.kind === 'add' ? 'new' : line.newLineNumber != null ? 'new' : line.oldLineNumber != null ? 'old' : null;
+  const side: 'old' | 'new' | null =
+    line.kind === 'del'
+      ? 'old'
+      : line.kind === 'add'
+      ? 'new'
+      : line.newLineNumber != null
+      ? 'new'
+      : line.oldLineNumber != null
+      ? 'old'
+      : null;
   const lineNumber = side === 'old' ? line.oldLineNumber : line.newLineNumber;
   const key = side && lineNumber != null ? lineKey(side, lineNumber) : null;
   const inlineComments = key ? lineCommentMap.get(key) ?? [] : [];
@@ -320,17 +387,17 @@ function UnifiedRow({
           {line.content}
           {side && lineNumber != null && (
             <button
-              className="absolute right-1 top-0 opacity-0 group-hover:opacity-100 btn-ghost py-0 px-1 text-[10px]"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md border border-border bg-bg-panel grid place-items-center text-[10px] text-text-muted hover:text-accent"
               onClick={() => onAddLineComment(side, lineNumber)}
               title="Comment line (or double-click)"
             >
-              💬
+              +
             </button>
           )}
         </div>
       </div>
       {inlineComments.map((c) => (
-        <InlineCommentRow key={c.id} comment={c} />
+        <InlineCommentRow key={c.id} comment={c} indent="line" />
       ))}
     </>
   );
@@ -347,7 +414,6 @@ function SplitHunk({
   comments: ReviewComment[];
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
 }) {
-  // Build paired rows by walking the hunk and pairing del with subsequent add lines.
   type Row = { left: DiffLine | null; right: DiffLine | null };
   const rows: Row[] = [];
   let i = 0;
@@ -357,7 +423,6 @@ function SplitHunk({
       rows.push({ left: l, right: l });
       i++;
     } else if (l.kind === 'del') {
-      // Collect a run of dels and a following run of adds, pair them.
       const dels: DiffLine[] = [];
       while (i < hunk.lines.length && hunk.lines[i].kind === 'del') {
         dels.push(hunk.lines[i]);
@@ -376,7 +441,6 @@ function SplitHunk({
       rows.push({ left: null, right: l });
       i++;
     } else {
-      // meta
       rows.push({ left: l, right: l });
       i++;
     }
@@ -384,7 +448,7 @@ function SplitHunk({
   const lineCommentMap = useMemo(() => commentsByLine(comments), [comments]);
 
   return (
-    <div className="grid grid-cols-2 divide-x divide-border-subtle">
+    <div className="grid grid-cols-2 divide-x divide-border">
       <div>
         {rows.map((r, idx) => (
           <SideCell
@@ -423,11 +487,13 @@ function SideCell({
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
 }) {
   if (!line) {
-    return <div className="diff-line context">
-      <div className="gut" />
-      <div className="gut" />
-      <div className="body" />
-    </div>;
+    return (
+      <div className="diff-line context">
+        <div className="gut" />
+        <div className="gut" />
+        <div className="body" />
+      </div>
+    );
   }
   const cls =
     line.kind === 'add' && side === 'new'
@@ -454,46 +520,106 @@ function SideCell({
           {line.content}
           {lineNumber != null && (
             <button
-              className="absolute right-1 top-0 opacity-0 group-hover:opacity-100 btn-ghost py-0 px-1 text-[10px]"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md border border-border bg-bg-panel grid place-items-center text-[10px] text-text-muted hover:text-accent"
               onClick={() => onAddLineComment(side, lineNumber)}
             >
-              💬
+              +
             </button>
           )}
         </div>
       </div>
       {inlineComments.map((c) => (
-        <InlineCommentRow key={c.id} comment={c} />
+        <InlineCommentRow key={c.id} comment={c} indent="line" />
       ))}
     </>
   );
 }
 
-function InlineCommentRow({ comment }: { comment: ReviewComment }) {
-  const { loadComments, toast } = useApp();
+function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent: 'line' | 'hunk' }) {
+  const { state, dispatch, loadComments, toast, logActivity } = useApp();
+  const isSelected = state.selectedCommentIds.includes(comment.id);
+
   const resolve = async () => {
     try {
       await api.updateComment(comment.id, { status: comment.status === 'open' ? 'resolved' : 'open' });
+      logActivity({
+        kind: 'comment_resolved',
+        message: comment.status === 'open' ? 'Resolved comment' : 'Reopened comment',
+        detail: comment.file_path,
+      });
       await loadComments();
     } catch (e) {
       toast('error', (e as Error).message);
     }
   };
+
+  const extract = () => {
+    dispatch({ type: 'toggleCommentSelection', id: comment.id, on: true });
+    dispatch({ type: 'setRightPanelTab', tab: 'context' });
+    if (comment.hunk_header) {
+      dispatch({
+        type: 'toggleHunkSelection',
+        key: `${comment.file_path}::${comment.hunk_header}`,
+        on: true,
+      });
+    } else if (comment.target_kind === 'file') {
+      dispatch({ type: 'toggleFileSelection', path: comment.file_path, on: true });
+    }
+    logActivity({ kind: 'context_extracted', message: 'Added comment to context', detail: comment.file_path });
+    toast('success', 'Selected comment context extracted');
+  };
+
   return (
-    <div className="px-12 py-2 bg-bg-subtle border-y border-border-subtle">
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
-          <div className="text-xs text-text-muted mb-1">
-            {comment.label && <span className="tag mr-1">{comment.label}</span>}
-            {new Date(comment.created_at).toLocaleString()}
-            {comment.status === 'resolved' && <span className="ml-1 text-success">✓ resolved</span>}
+    <div
+      className={cn(
+        'grid grid-cols-[104px_1fr] border-b border-border bg-bg-panel',
+        indent === 'hunk' && 'grid-cols-[44px_1fr]',
+      )}
+    >
+      <div className={cn('border-r border-border', isSelected ? 'bg-accent-soft' : 'bg-bg-subtle')} />
+      <article className="m-2.5 border border-accent rounded-card overflow-hidden bg-bg-panel">
+        <header className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border">
+          <div className="flex items-center gap-2 font-semibold text-sm">
+            <span className="w-6 h-6 rounded-full bg-text-primary text-bg-panel grid place-items-center font-mono text-[11px]">
+              {(comment.label?.slice(0, 2) ?? 'YO').toUpperCase()}
+            </span>
+            <span>
+              {comment.target_kind === 'line'
+                ? `Line ${comment.diff_side === 'old' ? '−' : '+'}${comment.line_number}`
+                : comment.target_kind === 'hunk'
+                ? 'Hunk note'
+                : 'File note'}
+            </span>
+            {comment.label && <span className="chip">{comment.label}</span>}
           </div>
-          <div className="whitespace-pre-wrap text-sm">{comment.body}</div>
+          <span className="small-mono">
+            {comment.status === 'resolved' ? 'resolved' : 'pending review'} ·{' '}
+            {new Date(comment.created_at).toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        </header>
+        <div className="px-3 py-3">
+          <p className="m-0 whitespace-pre-wrap max-w-[72ch]">{comment.body}</p>
+          <div className="mt-2.5 flex items-center gap-2">
+            <button className="btn-primary h-8" onClick={extract}>
+              Extract context
+            </button>
+            <button className="btn h-8" onClick={() => void resolve()}>
+              {comment.status === 'open' ? 'Resolve' : 'Reopen'}
+            </button>
+            <button
+              className="btn h-8"
+              onClick={() => dispatch({ type: 'toggleCommentSelection', id: comment.id })}
+            >
+              {isSelected ? 'Deselect' : 'Select'}
+            </button>
+          </div>
         </div>
-        <button className="btn-ghost text-xs" onClick={() => void resolve()}>
-          {comment.status === 'open' ? 'Resolve' : 'Reopen'}
-        </button>
-      </div>
+      </article>
     </div>
   );
 }

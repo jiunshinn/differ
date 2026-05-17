@@ -3,6 +3,7 @@ import { safeStorage } from 'electron';
 import { getSetting, setSetting, deleteSetting } from './db';
 import type {
   GithubAuthState,
+  GithubCheckRun,
   GithubPullRequestDetail,
   GithubPullRequestSummary,
   GithubSubmitReviewInput,
@@ -130,6 +131,24 @@ export async function getPullRequestDetail(
     additions: data.additions,
     deletions: data.deletions,
   };
+}
+
+export async function listCheckRuns(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<GithubCheckRun[]> {
+  const client = mustClient();
+  const res = await client.checks.listForRef({ owner, repo, ref, per_page: 50 });
+  return res.data.check_runs.map((run) => ({
+    id: run.id,
+    name: run.name,
+    status: (run.status ?? 'queued') as GithubCheckRun['status'],
+    conclusion: (run.conclusion ?? null) as GithubCheckRun['conclusion'],
+    detailsUrl: run.details_url ?? null,
+    startedAt: run.started_at ?? null,
+    completedAt: run.completed_at ?? null,
+  }));
 }
 
 export async function submitReview(

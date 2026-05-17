@@ -11,6 +11,28 @@ import type {
 } from '@shared/types';
 
 export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context';
+export type RightPanelTab = 'overview' | 'comments' | 'context';
+
+export type ActivityKind =
+  | 'comment_created'
+  | 'comment_resolved'
+  | 'file_staged'
+  | 'file_unstaged'
+  | 'file_reviewed'
+  | 'commit'
+  | 'pull'
+  | 'push'
+  | 'fetch'
+  | 'context_copied'
+  | 'context_extracted';
+
+export interface ActivityEvent {
+  id: number;
+  kind: ActivityKind;
+  message: string;
+  detail?: string;
+  at: number; // epoch ms
+}
 
 export interface AppState {
   view: View;
@@ -26,10 +48,14 @@ export interface AppState {
   comments: ReviewComment[];
   fileStates: FileReviewState[];
   prNumber: number | null;
+  rightPanelTab: RightPanelTab;
+  fileFilter: string;
   // selections
   selectedCommentIds: number[];
   selectedFilePaths: string[];
   selectedHunkKeys: string[]; // "file::header"
+  // activity log
+  activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
 }
 
@@ -46,10 +72,13 @@ type Action =
   | { type: 'setComments'; comments: ReviewComment[] }
   | { type: 'setFileStates'; states: FileReviewState[] }
   | { type: 'setPrNumber'; n: number | null }
+  | { type: 'setRightPanelTab'; tab: RightPanelTab }
+  | { type: 'setFileFilter'; value: string }
   | { type: 'toggleCommentSelection'; id: number; on?: boolean }
   | { type: 'toggleFileSelection'; path: string; on?: boolean }
   | { type: 'toggleHunkSelection'; key: string; on?: boolean }
   | { type: 'clearSelections' }
+  | { type: 'pushActivity'; event: Omit<ActivityEvent, 'id' | 'at'> & { at?: number } }
   | { type: 'toast'; toast: AppState['toast'] };
 
 const initial: AppState = {
@@ -66,11 +95,17 @@ const initial: AppState = {
   comments: [],
   fileStates: [],
   prNumber: null,
+  rightPanelTab: 'overview',
+  fileFilter: '',
   selectedCommentIds: [],
   selectedFilePaths: [],
   selectedHunkKeys: [],
+  activity: [],
   toast: null,
 };
+
+let activityIdSeq = 1;
+const ACTIVITY_MAX = 30;
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -98,6 +133,10 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, fileStates: action.states };
     case 'setPrNumber':
       return { ...state, prNumber: action.n };
+    case 'setRightPanelTab':
+      return { ...state, rightPanelTab: action.tab };
+    case 'setFileFilter':
+      return { ...state, fileFilter: action.value };
     case 'toggleCommentSelection': {
       const has = state.selectedCommentIds.includes(action.id);
       const on = action.on ?? !has;
@@ -130,6 +169,16 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'clearSelections':
       return { ...state, selectedCommentIds: [], selectedFilePaths: [], selectedHunkKeys: [] };
+    case 'pushActivity': {
+      const next: ActivityEvent = {
+        id: activityIdSeq++,
+        at: action.event.at ?? Date.now(),
+        kind: action.event.kind,
+        message: action.event.message,
+        detail: action.event.detail,
+      };
+      return { ...state, activity: [next, ...state.activity].slice(0, ACTIVITY_MAX) };
+    }
     case 'toast':
       return { ...state, toast: action.toast };
     default:
@@ -144,6 +193,7 @@ interface Ctx {
   loadDiff: (filePath: string) => Promise<void>;
   loadComments: () => Promise<void>;
   loadFileStates: () => Promise<void>;
+  logActivity: (event: Omit<ActivityEvent, 'id' | 'at'>) => void;
   toast: (kind: 'info' | 'success' | 'error', message: string) => void;
 }
 
@@ -163,6 +213,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback((kind: 'info' | 'success' | 'error', message: string) => {
     dispatch({ type: 'toast', toast: { kind, message } });
     setTimeout(() => dispatch({ type: 'toast', toast: null }), 3200);
+  }, []);
+
+  const logActivity = useCallback((event: Omit<ActivityEvent, 'id' | 'at'>) => {
+    dispatch({ type: 'pushActivity', event });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -236,8 +290,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.repo, state.session, loadComments, loadFileStates]);
 
   const value = useMemo<Ctx>(
-    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, toast }),
-    [state, refresh, loadDiff, loadComments, loadFileStates, toast],
+    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast }),
+    [state, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -6,7 +6,7 @@ import GithubAuthDialog from './GithubAuthDialog';
 import { cn } from '../utils/cn';
 
 export default function TopBar() {
-  const { state, dispatch, refresh, toast } = useApp();
+  const { state, dispatch, refresh, logActivity, toast } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -15,11 +15,12 @@ export default function TopBar() {
 
   const goView = (view: typeof state.view) => dispatch({ type: 'view', view });
 
-  const run = async (label: string, fn: () => Promise<void>) => {
+  const run = async (label: string, kind: 'fetch' | 'pull' | 'push', fn: () => Promise<void>) => {
     setBusy(label);
     try {
       await fn();
       toast('success', `${label} done`);
+      logActivity({ kind, message: `${label} ${repo?.name ?? ''}`.trim() });
     } catch (e) {
       toast('error', (e as Error).message);
     } finally {
@@ -27,96 +28,189 @@ export default function TopBar() {
     }
   };
 
+  const titleText = repo
+    ? state.view === 'pr-detail' && state.prNumber
+      ? `Differ · ${repo.name} · PR #${state.prNumber}`
+      : `Differ · ${repo.name}`
+    : 'Differ';
+
   return (
-    <div className="h-11 flex items-center gap-2 px-3 border-b border-border bg-bg-panel select-none drag-region"
-      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <div className="w-16" /> {/* macOS traffic-light spacing */}
-        <button className="btn-ghost" onClick={() => goView('picker')}>
-          <span className="font-semibold">Differ</span>
-        </button>
-        {repo && (
-          <>
-            <span className="text-text-muted">•</span>
-            <span className="text-sm text-text-secondary">{repo.name}</span>
-            <BranchMenu />
-            {status && (
-              <span className="tag">
-                {status.ahead > 0 && <span className="text-emerald-300">↑{status.ahead}</span>}
-                {status.behind > 0 && <span className="text-amber-300">↓{status.behind}</span>}
-                {status.ahead === 0 && status.behind === 0 && (
-                  <span className="text-text-muted">in sync</span>
-                )}
-              </span>
-            )}
-          </>
-        )}
+    <>
+      <div
+        className="h-[42px] grid grid-cols-[156px_1fr_156px] items-center px-3.5 border-b border-border bg-bg select-none drag-region"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-2 pl-[68px]" aria-hidden>
+          {/* macOS traffic-light spacing */}
+        </div>
+        <div className="justify-self-center text-xs text-text-muted tracking-wide truncate max-w-full">
+          {titleText}
+        </div>
+        <div className="justify-self-end text-xs text-text-muted tabular-nums">
+          {repo && status ? (
+            status.ahead === 0 && status.behind === 0 ? 'in sync' : `↑${status.ahead} ↓${status.behind}`
+          ) : null}
+        </div>
       </div>
-      <div className="flex-1" />
-      {repo && (
-        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+
+      <div
+        className="h-12 grid grid-cols-[260px_1fr_auto] items-center gap-4 px-3.5 border-b border-border bg-bg-panel no-drag"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
-            className={cn('btn-ghost', state.view === 'local' && 'bg-bg-hover')}
-            onClick={() => goView('local')}
+            className="w-6 h-6 rounded-md border border-text-primary text-text-primary grid place-items-center font-mono text-[11px] leading-none"
+            onClick={() => goView('picker')}
+            title="Open repository"
           >
-            Local
-          </button>
-          <button
-            className={cn('btn-ghost', state.view === 'pr-list' && 'bg-bg-hover')}
-            onClick={() => goView('pr-list')}
-          >
-            Pull Requests
+            DF
           </button>
           <button
-            className={cn('btn-ghost', state.view === 'context' && 'bg-bg-hover')}
-            onClick={() => goView('context')}
+            className="font-semibold tracking-tight whitespace-nowrap"
+            onClick={() => goView('picker')}
           >
-            Context
-          </button>
-          <div className="mx-2 h-5 w-px bg-border" />
-          <button className="btn" disabled={!!busy} onClick={() => run('Refresh', refresh)}>
-            ↻
-          </button>
-          <button
-            className="btn"
-            disabled={!!busy}
-            onClick={() => run('Fetch', async () => { await api.fetch(repo.id); await refresh(); })}
-          >
-            Fetch
-          </button>
-          <button
-            className="btn"
-            disabled={!!busy}
-            onClick={() => run('Pull', async () => { await api.pull(repo.id); await refresh(); })}
-          >
-            Pull
-          </button>
-          <button
-            className="btn"
-            disabled={!!busy}
-            onClick={() =>
-              run('Push', async () => {
-                try {
-                  await api.push(repo.id);
-                } catch (e) {
-                  if ((e as Error).message.includes('no upstream')) {
-                    await api.push(repo.id, { setUpstream: true });
-                  } else {
-                    throw e;
-                  }
-                }
-                await refresh();
-              })
-            }
-          >
-            Push
-          </button>
-          <button className="btn-ghost" onClick={() => setAuthOpen(true)}>
-            GitHub…
+            Differ
           </button>
         </div>
-      )}
+
+        <div className="flex items-center gap-2 min-w-0 text-text-muted overflow-hidden">
+          {repo ? (
+            <>
+              <span className="chip" title={repo.path}>
+                {repo.name}
+              </span>
+              <BranchMenu />
+              {status?.upstream && (
+                <>
+                  <span className="text-xs">into</span>
+                  <span className="chip">{status.upstream}</span>
+                </>
+              )}
+              {state.session && (
+                <>
+                  <span className="text-xs">·</span>
+                  <span className="text-xs">
+                    {state.files.length} {state.files.length === 1 ? 'file changed' : 'files changed'}
+                  </span>
+                </>
+              )}
+              {state.comments.filter((c) => c.status === 'open').length > 0 && (
+                <>
+                  <span className="text-xs">·</span>
+                  <span className="text-xs">
+                    {state.comments.filter((c) => c.status === 'open').length} open comments
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-text-muted">Local-first AI-native Git review</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {repo && (
+            <>
+              <ViewSwitch view={state.view} onChange={goView} />
+              <div className="w-px h-5 bg-border mx-1" />
+              <button
+                className="btn"
+                disabled={!!busy}
+                onClick={() => run('Refresh', 'fetch', refresh)}
+                title="Refresh status"
+              >
+                ↻
+              </button>
+              <button
+                className="btn"
+                disabled={!!busy}
+                onClick={() =>
+                  run('Fetch', 'fetch', async () => {
+                    await api.fetch(repo.id);
+                    await refresh();
+                  })
+                }
+              >
+                Fetch
+              </button>
+              <button
+                className="btn"
+                disabled={!!busy}
+                onClick={() =>
+                  run('Pull', 'pull', async () => {
+                    await api.pull(repo.id);
+                    await refresh();
+                  })
+                }
+              >
+                Pull
+              </button>
+              <button
+                className="btn"
+                disabled={!!busy}
+                onClick={() =>
+                  run('Push', 'push', async () => {
+                    try {
+                      await api.push(repo.id);
+                    } catch (e) {
+                      if ((e as Error).message.includes('no upstream')) {
+                        await api.push(repo.id, { setUpstream: true });
+                      } else {
+                        throw e;
+                      }
+                    }
+                    await refresh();
+                  })
+                }
+              >
+                Push
+              </button>
+              <button className="btn" onClick={() => setAuthOpen(true)}>
+                GitHub
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {authOpen && <GithubAuthDialog onClose={() => setAuthOpen(false)} />}
+    </>
+  );
+}
+
+function ViewSwitch({
+  view,
+  onChange,
+}: {
+  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context';
+  onChange: (v: 'local' | 'pr-list' | 'context') => void;
+}) {
+  const tabs = [
+    { id: 'local' as const, label: 'Local' },
+    { id: 'pr-list' as const, label: 'Pull requests' },
+    { id: 'context' as const, label: 'Context' },
+  ];
+  return (
+    <div className="inline-flex bg-bg border border-border rounded-lg p-[3px] gap-1">
+      {tabs.map((t) => {
+        const active =
+          view === t.id ||
+          (t.id === 'pr-list' && view === 'pr-detail');
+        return (
+          <button
+            key={t.id}
+            className={cn(
+              'min-h-[28px] px-2.5 rounded-md text-xs font-medium tracking-wide',
+              active
+                ? 'bg-bg-panel text-text-primary border border-border'
+                : 'text-text-muted hover:text-text-primary',
+            )}
+            onClick={() => onChange(t.id)}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

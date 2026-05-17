@@ -47,28 +47,29 @@ export default function BranchMenu() {
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild>
-        <button className="tag">
-          <span className="text-accent">⎇</span> {current}
+        <button className="chip-selected">
+          <span className="text-accent mr-1">⎇</span>
+          {current}
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
-          className="z-50 min-w-[260px] bg-bg-panel border border-border rounded shadow-lg p-1"
-          sideOffset={4}
+          className="z-50 min-w-[280px] bg-bg-panel border border-border rounded-card shadow-raised p-1"
+          sideOffset={6}
         >
           {branches.map((b) => (
             <DropdownMenu.Item
               key={b.name}
-              className="px-2 py-1.5 text-sm rounded cursor-pointer outline-none data-[highlighted]:bg-bg-hover"
+              className="px-2.5 py-1.5 text-sm rounded-md cursor-pointer outline-none data-[highlighted]:bg-bg-subtle"
               onSelect={() => void doCheckout(b.name)}
             >
-              <div className="flex items-center justify-between">
-                <span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-[12.5px]">
                   {b.isCurrent && <span className="text-accent mr-1">●</span>}
                   {b.name}
                 </span>
                 {b.upstream && (
-                  <span className="text-xs text-text-muted">
+                  <span className="text-[11px] text-text-muted tabular-nums">
                     {b.upstream}
                     {b.ahead ? ` ↑${b.ahead}` : ''}
                     {b.behind ? ` ↓${b.behind}` : ''}
@@ -80,7 +81,7 @@ export default function BranchMenu() {
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
           {!creating ? (
             <DropdownMenu.Item
-              className="px-2 py-1.5 text-sm rounded cursor-pointer outline-none data-[highlighted]:bg-bg-hover text-accent"
+              className="px-2.5 py-1.5 text-sm rounded-md cursor-pointer outline-none data-[highlighted]:bg-bg-subtle text-accent"
               onSelect={(e) => {
                 e.preventDefault();
                 setCreating(true);
