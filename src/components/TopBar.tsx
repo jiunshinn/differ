@@ -49,24 +49,8 @@ export default function TopBar() {
   return (
     <>
       <div
-        className="h-12 grid grid-cols-[260px_1fr_auto] items-center gap-4 px-3.5 border-b border-border bg-bg-panel"
+        className="h-12 grid grid-cols-[1fr_auto] items-center gap-4 px-3.5 border-b border-border bg-bg-panel"
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <button
-            className="w-6 h-6 rounded-md border border-text-primary text-text-primary grid place-items-center font-mono text-[11px] leading-none"
-            onClick={() => goView('picker')}
-            title="Open repository"
-          >
-            DF
-          </button>
-          <button
-            className="font-semibold tracking-tight whitespace-nowrap"
-            onClick={() => goView('picker')}
-          >
-            Differ
-          </button>
-        </div>
-
         <div className="flex items-center gap-2 min-w-0 text-text-muted overflow-hidden">
           {repo ? (
             <>
