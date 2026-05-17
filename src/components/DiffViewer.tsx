@@ -90,7 +90,7 @@ export default function DiffViewer() {
   const dirName = selected.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '';
 
   return (
-    <section className="diff-area min-h-0 overflow-auto bg-bg-panel grid grid-rows-[auto_auto_1fr]">
+    <section className="diff-area min-w-0 min-h-0 overflow-auto bg-bg-panel grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_1fr]">
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto] gap-4 items-center px-4 py-3 bg-bg-panel border-b border-border">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight leading-tight truncate">{baseName}</h1>
@@ -155,7 +155,7 @@ export default function DiffViewer() {
         <SummaryTile value={selectedHunkCount} label="Selected hunks" tone={selectedHunkCount ? 'accent' : 'neutral'} />
       </div>
 
-      <div className="px-4 pb-4 grid gap-3.5">
+      <div className="px-4 pb-4 grid grid-cols-[minmax(0,1fr)] gap-3.5">
         {diff.isBinary ? (
           <div className="panel-card p-6 text-sm text-text-muted">Binary file — diff not shown.</div>
         ) : diff.hunks.length === 0 ? (
@@ -349,10 +349,12 @@ function UnifiedHunk({
 }) {
   const lineCommentMap = useMemo(() => commentsByLine(comments), [comments]);
   return (
-    <div>
-      {hunk.lines.map((l, idx) => (
-        <UnifiedRow key={idx} line={l} lineCommentMap={lineCommentMap} onAddLineComment={onAddLineComment} />
-      ))}
+    <div className="overflow-x-auto">
+      <div className="min-w-max">
+        {hunk.lines.map((l, idx) => (
+          <UnifiedRow key={idx} line={l} lineCommentMap={lineCommentMap} onAddLineComment={onAddLineComment} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -457,27 +459,31 @@ function SplitHunk({
 
   return (
     <div className="grid grid-cols-2 divide-x divide-border">
-      <div>
-        {rows.map((r, idx) => (
-          <SideCell
-            key={`l${idx}`}
-            line={r.left}
-            side="old"
-            lineCommentMap={lineCommentMap}
-            onAddLineComment={onAddLineComment}
-          />
-        ))}
+      <div className="overflow-x-auto min-w-0">
+        <div className="min-w-max">
+          {rows.map((r, idx) => (
+            <SideCell
+              key={`l${idx}`}
+              line={r.left}
+              side="old"
+              lineCommentMap={lineCommentMap}
+              onAddLineComment={onAddLineComment}
+            />
+          ))}
+        </div>
       </div>
-      <div>
-        {rows.map((r, idx) => (
-          <SideCell
-            key={`r${idx}`}
-            line={r.right}
-            side="new"
-            lineCommentMap={lineCommentMap}
-            onAddLineComment={onAddLineComment}
-          />
-        ))}
+      <div className="overflow-x-auto min-w-0">
+        <div className="min-w-max">
+          {rows.map((r, idx) => (
+            <SideCell
+              key={`r${idx}`}
+              line={r.right}
+              side="new"
+              lineCommentMap={lineCommentMap}
+              onAddLineComment={onAddLineComment}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
