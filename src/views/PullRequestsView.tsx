@@ -43,7 +43,7 @@ export default function PullRequestsView() {
       dispatch({ type: 'setSession', session });
       dispatch({ type: 'setPrNumber', n: pr.number });
       dispatch({ type: 'view', view: 'pr-detail' });
-      toast('success', `Checked out PR #${pr.number}`);
+      toast('success', `Opened PR #${pr.number}`);
     } catch (e) {
       toast('error', (e as Error).message);
     }

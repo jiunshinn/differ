@@ -335,11 +335,11 @@ export function registerIpcHandlers(deps: Deps): void {
     const repo = mustRepo(repoId);
     if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
     const detail = await getPullRequestDetail(repo.github_owner, repo.github_repo, prNumber);
-    // Fetch the PR ref into a local branch.
-    const localBranch = `pr/${prNumber}`;
+    // Make the PR head and base reachable locally so the diff view (origin/<base>..<headSha>)
+    // resolves. Do not touch the working tree — viewing a PR should not switch branches.
     const { runGit } = await import('./services/git');
-    await runGit(['fetch', 'origin', `pull/${prNumber}/head:${localBranch}`], { cwd: repo.path });
-    await runGit(['checkout', localBranch], { cwd: repo.path });
+    await runGit(['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repo.path });
+    await runGit(['fetch', 'origin', detail.baseRef], { cwd: repo.path });
     return ensurePrSession(repoId, prNumber, detail.headSha, detail.baseSha, detail.headRef, detail.baseRef);
   });
 
