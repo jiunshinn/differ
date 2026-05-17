@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import BranchMenu from './BranchMenu';
 import GithubAuthDialog from './GithubAuthDialog';
 import { cn } from '../utils/cn';
+import { useTheme, type ThemeMode } from '../utils/theme';
 
 export default function TopBar() {
   const { state, dispatch, refresh, logActivity, toast } = useApp();
@@ -34,28 +35,21 @@ export default function TopBar() {
       : `Differ · ${repo.name}`
     : 'Differ';
 
+  useEffect(() => {
+    document.title = titleText;
+  }, [titleText]);
+
+  const syncText =
+    repo && status
+      ? status.ahead === 0 && status.behind === 0
+        ? 'in sync'
+        : `↑${status.ahead} ↓${status.behind}`
+      : null;
+
   return (
     <>
       <div
-        className="h-[42px] grid grid-cols-[156px_1fr_156px] items-center px-3.5 border-b border-border bg-bg select-none drag-region"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-2 pl-[68px]" aria-hidden>
-          {/* macOS traffic-light spacing */}
-        </div>
-        <div className="justify-self-center text-xs text-text-muted tracking-wide truncate max-w-full">
-          {titleText}
-        </div>
-        <div className="justify-self-end text-xs text-text-muted tabular-nums">
-          {repo && status ? (
-            status.ahead === 0 && status.behind === 0 ? 'in sync' : `↑${status.ahead} ↓${status.behind}`
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        className="h-12 grid grid-cols-[260px_1fr_auto] items-center gap-4 px-3.5 border-b border-border bg-bg-panel no-drag"
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        className="h-12 grid grid-cols-[260px_1fr_auto] items-center gap-4 px-3.5 border-b border-border bg-bg-panel"
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <button
@@ -100,6 +94,12 @@ export default function TopBar() {
                   <span className="text-xs">
                     {state.comments.filter((c) => c.status === 'open').length} open comments
                   </span>
+                </>
+              )}
+              {syncText && (
+                <>
+                  <span className="text-xs">·</span>
+                  <span className="text-xs tabular-nums">{syncText}</span>
                 </>
               )}
             </>
@@ -170,11 +170,30 @@ export default function TopBar() {
               </button>
             </>
           )}
+          <ThemeToggle />
         </div>
       </div>
 
       {authOpen && <GithubAuthDialog onClose={() => setAuthOpen(false)} />}
     </>
+  );
+}
+
+function ThemeToggle() {
+  const { mode, isDark, setMode } = useTheme();
+  const order: ThemeMode[] = ['system', 'light', 'dark'];
+  const next = () => setMode(order[(order.indexOf(mode) + 1) % order.length]);
+  const icon = mode === 'system' ? '◐' : isDark ? '☾' : '☀';
+  const label = mode === 'system' ? 'Theme: System' : mode === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+  return (
+    <button
+      className="btn-icon"
+      onClick={next}
+      title={`${label} (click to cycle)`}
+      aria-label={label}
+    >
+      {icon}
+    </button>
   );
 }
 

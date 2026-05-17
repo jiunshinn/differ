@@ -1,0 +1,1562 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patchline - Git viewer workspace</title>
+  <style>
+    :root {
+      --bg: #FAFAFA;
+      --surface: #FFFFFF;
+      --fg: #111111;
+      --muted: #6B6B6B;
+      --border: #E5E5E5;
+      --accent: #2F6FEB;
+      --success: #17A34A;
+      --warn: #EAB308;
+      --danger: #DC2626;
+      --line-add: rgba(23, 163, 74, 0.09);
+      --line-remove: rgba(220, 38, 38, 0.08);
+      --line-focus: rgba(47, 111, 235, 0.08);
+      --shadow-raised: 0 2px 8px rgba(17, 17, 17, 0.08);
+      --font-display: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .prototype-shell {
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+    }
+
+    .app-window {
+      width: min(1500px, calc(100vw - 48px));
+      height: min(920px, calc(100vh - 48px));
+      min-height: 760px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 42px 48px 1fr;
+      box-shadow: var(--shadow-raised);
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: 168px 1fr 168px;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: #FFFFFF;
+    }
+
+    .window-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(17, 17, 17, 0.12);
+    }
+
+    .window-dot.close {
+      background: #FF5F57;
+    }
+
+    .window-dot.min {
+      background: #FFBD2E;
+    }
+
+    .window-dot.max {
+      background: #28C840;
+    }
+
+    .title-copy {
+      text-align: center;
+      min-width: 0;
+    }
+
+    .title-copy strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1.1;
+    }
+
+    .title-copy span {
+      display: block;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .sync-state {
+      justify-self: end;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.01em;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 260px 1fr auto;
+      align-items: center;
+      gap: 14px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: #FFFFFF;
+    }
+
+    .repo-select {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      min-width: 0;
+    }
+
+    .repo-select strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .repo-select span {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      flex: 0 0 auto;
+    }
+
+    .view-tabs {
+      display: inline-flex;
+      width: fit-content;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #FAFAFA;
+    }
+
+    .view-tab {
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .view-tab.active {
+      color: var(--fg);
+      background: #FFFFFF;
+      box-shadow: 0 1px 2px rgba(17, 17, 17, 0.08);
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--fg);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #FFFFFF;
+    }
+
+    .btn.danger {
+      color: var(--danger);
+      border-color: rgba(220, 38, 38, 0.24);
+      background: rgba(220, 38, 38, 0.04);
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 68px 260px minmax(580px, 1fr) 340px;
+      background: #FAFAFA;
+    }
+
+    .rail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 10px;
+      border-inline-end: 1px solid var(--border);
+      background: #FFFFFF;
+    }
+
+    .rail-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .rail-button.active {
+      background: var(--line-focus);
+      color: var(--accent);
+    }
+
+    .rail-spacer {
+      flex: 1;
+    }
+
+    .sidebar,
+    .detail {
+      min-width: 0;
+      min-height: 0;
+      border-inline-end: 1px solid var(--border);
+      background: #FFFFFF;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail {
+      border-inline-end: 0;
+      border-inline-start: 1px solid var(--border);
+    }
+
+    .sidebar-head,
+    .detail-head,
+    .content-head {
+      min-height: 52px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #FFFFFF;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .small-mono {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sidebar-scroll,
+    .detail-scroll,
+    .content-scroll {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .repo-summary {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .repo-summary strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .branch-group {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .branch-group + .branch-group {
+      padding-top: 12px;
+    }
+
+    .branch-list {
+      display: grid;
+      gap: 3px;
+      margin-top: 8px;
+    }
+
+    .branch-item {
+      display: grid;
+      grid-template-columns: 14px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 30px;
+      padding: 0 7px;
+      border-radius: 7px;
+      color: var(--fg);
+    }
+
+    .branch-item.active {
+      background: var(--line-focus);
+      color: var(--accent);
+    }
+
+    .branch-item.warn {
+      color: var(--danger);
+    }
+
+    .branch-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .branch-count {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .dot.blue {
+      background: var(--accent);
+    }
+
+    .dot.green {
+      background: var(--success);
+    }
+
+    .dot.red {
+      background: var(--danger);
+    }
+
+    .dot.yellow {
+      background: var(--warn);
+    }
+
+    .commit-draft {
+      margin: 14px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #FAFAFA;
+    }
+
+    .commit-draft textarea {
+      width: 100%;
+      min-height: 72px;
+      margin: 10px 0;
+      padding: 9px 10px;
+      resize: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: var(--fg);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .commit-draft textarea:focus {
+      outline: 2px solid rgba(47, 111, 235, 0.18);
+      border-color: var(--accent);
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen {
+      display: none;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .screen.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .content-head {
+      justify-content: space-between;
+    }
+
+    .content-heading {
+      min-width: 0;
+    }
+
+    .content-heading h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .content-heading p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .content-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .search {
+      width: 220px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: var(--fg);
+      font-size: 12px;
+    }
+
+    .graph-wrap {
+      min-height: 0;
+      padding: 14px;
+    }
+
+    .graph-table {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #FFFFFF;
+    }
+
+    .graph-row {
+      display: grid;
+      grid-template-columns: 98px 132px minmax(220px, 1fr) 132px 112px;
+      min-height: 54px;
+      border-bottom: 1px solid var(--border);
+      align-items: stretch;
+    }
+
+    .graph-row:last-child {
+      border-bottom: 0;
+    }
+
+    .graph-row.header {
+      min-height: 34px;
+      background: #FAFAFA;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .graph-row.header > div,
+    .graph-cell {
+      padding: 9px 12px;
+      border-inline-end: 1px solid var(--border);
+      min-width: 0;
+    }
+
+    .graph-row.header > div:last-child,
+    .graph-cell:last-child {
+      border-inline-end: 0;
+    }
+
+    .graph-cell {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .graph-line {
+      position: relative;
+      height: 38px;
+      width: 74px;
+      flex: 0 0 auto;
+    }
+
+    .lane {
+      position: absolute;
+      top: -9px;
+      bottom: -9px;
+      width: 2px;
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .lane.one {
+      inset-inline-start: 12px;
+    }
+
+    .lane.two {
+      inset-inline-start: 34px;
+      background: rgba(47, 111, 235, 0.36);
+    }
+
+    .lane.three {
+      inset-inline-start: 56px;
+      background: rgba(23, 163, 74, 0.34);
+    }
+
+    .join {
+      position: absolute;
+      top: 18px;
+      inset-inline-start: 13px;
+      width: 22px;
+      height: 2px;
+      background: rgba(47, 111, 235, 0.42);
+    }
+
+    .node {
+      position: absolute;
+      top: 12px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.14);
+    }
+
+    .node.one {
+      inset-inline-start: 7px;
+      background: var(--fg);
+    }
+
+    .node.two {
+      inset-inline-start: 29px;
+      background: var(--accent);
+    }
+
+    .node.three {
+      inset-inline-start: 51px;
+      background: var(--success);
+    }
+
+    .commit-copy {
+      min-width: 0;
+      display: block;
+    }
+
+    .commit-copy strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .commit-copy span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 7px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #FFFFFF;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .chip.selected {
+      border-color: rgba(47, 111, 235, 0.28);
+      background: var(--line-focus);
+      color: var(--accent);
+    }
+
+    .chip.success {
+      border-color: rgba(23, 163, 74, 0.22);
+      background: rgba(23, 163, 74, 0.06);
+      color: var(--success);
+    }
+
+    .chip.warn {
+      border-color: rgba(234, 179, 8, 0.34);
+      background: rgba(234, 179, 8, 0.08);
+      color: #8A6500;
+    }
+
+    .chip.danger {
+      border-color: rgba(220, 38, 38, 0.22);
+      background: rgba(220, 38, 38, 0.06);
+      color: var(--danger);
+    }
+
+    .mono-cell {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .detail-card {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .detail-card h2,
+    .detail-card h3 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .detail-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 32px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FAFAFA;
+    }
+
+    .status-row strong {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .file-tree {
+      display: grid;
+      gap: 4px;
+      margin-top: 10px;
+    }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      padding: 0 7px;
+      border-radius: 7px;
+      font-size: 12px;
+    }
+
+    .file-row.active {
+      background: var(--line-focus);
+      color: var(--accent);
+    }
+
+    .conflict-layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .queue-panel,
+    .editor-panel,
+    .sync-panel {
+      min-height: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #FFFFFF;
+      overflow: hidden;
+    }
+
+    .queue-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .queue-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .queue-item.active {
+      background: var(--line-focus);
+    }
+
+    .queue-item strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .queue-item span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .editor-panel {
+      display: grid;
+      grid-template-rows: 42px 1fr 52px;
+    }
+
+    .editor-head,
+    .editor-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: #FAFAFA;
+    }
+
+    .editor-actions {
+      border-top: 1px solid var(--border);
+      border-bottom: 0;
+      background: #FFFFFF;
+    }
+
+    .merge-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .merge-pane {
+      min-width: 0;
+      border-inline-end: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .merge-pane:last-child {
+      border-inline-end: 0;
+    }
+
+    .pane-label {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--border);
+      background: #FFFFFF;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .code-block {
+      min-height: 0;
+      overflow: auto;
+      padding: 8px 0;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.7;
+      font-variant-numeric: tabular-nums;
+      background: #FFFFFF;
+    }
+
+    .code-line {
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 10px;
+      padding: 0 12px;
+      white-space: pre;
+    }
+
+    .code-line .ln {
+      color: var(--muted);
+      text-align: end;
+      user-select: none;
+    }
+
+    .code-line.add {
+      background: var(--line-add);
+    }
+
+    .code-line.remove {
+      background: var(--line-remove);
+    }
+
+    .code-line.focus {
+      background: var(--line-focus);
+    }
+
+    .sync-layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .sync-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: #FAFAFA;
+    }
+
+    .panel-head strong {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .changes-list {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .change-row {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 9px;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .change-row strong {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .change-row span {
+      display: block;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .timeline {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .timeline-step {
+      display: grid;
+      grid-template-columns: 20px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .step-index {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .timeline-step.done .step-index {
+      border-color: rgba(23, 163, 74, 0.24);
+      background: rgba(23, 163, 74, 0.08);
+      color: var(--success);
+    }
+
+    .timeline-step.active .step-index {
+      border-color: rgba(47, 111, 235, 0.28);
+      background: var(--line-focus);
+      color: var(--accent);
+    }
+
+    .timeline-step strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .timeline-step span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      inset-inline-start: 50%;
+      bottom: 22px;
+      transform: translateX(-50%) translateY(18px);
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #FFFFFF;
+      color: var(--fg);
+      box-shadow: var(--shadow-raised);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (max-width: 1180px) {
+      .prototype-shell {
+        padding: 12px;
+      }
+
+      .app-window {
+        width: calc(100vw - 24px);
+        height: calc(100vh - 24px);
+      }
+
+      .workspace {
+        grid-template-columns: 60px 230px minmax(520px, 1fr);
+      }
+
+      .detail {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-shell">
+    <section class="app-window" aria-label="Patchline Git viewer prototype">
+      <header class="titlebar">
+        <div class="window-controls" aria-hidden="true">
+          <span class="window-dot close"></span>
+          <span class="window-dot min"></span>
+          <span class="window-dot max"></span>
+        </div>
+        <div class="title-copy">
+          <strong>Patchline</strong>
+          <span>open-design/app - feature/git-workspace</span>
+        </div>
+        <div class="sync-state">origin/main fetched 2m ago</div>
+      </header>
+
+      <nav class="toolbar" aria-label="Workspace controls">
+        <button class="repo-select" type="button">
+          <strong>open-design/app</strong>
+          <span>2 ahead</span>
+        </button>
+        <div class="view-tabs" role="tablist" aria-label="Git viewer screens">
+          <button class="view-tab active" type="button" data-view="graph">Graph</button>
+          <button class="view-tab" type="button" data-view="resolve">Resolve</button>
+          <button class="view-tab" type="button" data-view="sync">Sync</button>
+        </div>
+        <div class="toolbar-actions">
+          <button class="btn" type="button" data-action="toast" data-message="Fetched origin/main">Fetch</button>
+          <button class="btn" type="button" data-action="toast" data-message="Created pull request draft">Create PR</button>
+          <button class="btn primary" type="button" data-action="toast" data-message="Pushed feature/git-workspace">Push</button>
+        </div>
+      </nav>
+
+      <main class="workspace">
+        <aside class="rail" aria-label="Primary navigation">
+          <button class="rail-button active" type="button" aria-label="Workspace">G</button>
+          <button class="rail-button" type="button" aria-label="Files">F</button>
+          <button class="rail-button" type="button" aria-label="Search">S</button>
+          <button class="rail-button" type="button" aria-label="Settings">C</button>
+          <div class="rail-spacer"></div>
+          <button class="rail-button" type="button" aria-label="Account">JS</button>
+        </aside>
+
+        <aside class="sidebar" aria-label="Repository explorer">
+          <div class="sidebar-head">
+            <p class="section-title">Repository</p>
+            <span class="small-mono">main + 3</span>
+          </div>
+          <div class="sidebar-scroll">
+            <section class="repo-summary">
+              <strong>Feature workspace</strong>
+              <span class="small-mono">4 changed files - 2 conflicts - checks pending</span>
+            </section>
+
+            <section class="branch-group">
+              <p class="section-title">Local branches</p>
+              <div class="branch-list">
+                <div class="branch-item active">
+                  <span class="dot blue"></span>
+                  <span class="branch-name">feature/git-workspace</span>
+                  <span class="branch-count">2</span>
+                </div>
+                <div class="branch-item">
+                  <span class="dot"></span>
+                  <span class="branch-name">main</span>
+                  <span class="branch-count">0</span>
+                </div>
+                <div class="branch-item">
+                  <span class="dot green"></span>
+                  <span class="branch-name">release/stable-viewer</span>
+                  <span class="branch-count">6</span>
+                </div>
+                <div class="branch-item warn">
+                  <span class="dot red"></span>
+                  <span class="branch-name">merge/origin-auth</span>
+                  <span class="branch-count">2</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="branch-group">
+              <p class="section-title">Remotes</p>
+              <div class="branch-list">
+                <div class="branch-item">
+                  <span class="dot"></span>
+                  <span class="branch-name">origin/main</span>
+                  <span class="branch-count">18</span>
+                </div>
+                <div class="branch-item">
+                  <span class="dot"></span>
+                  <span class="branch-name">origin/release-stable</span>
+                  <span class="branch-count">9</span>
+                </div>
+                <div class="branch-item">
+                  <span class="dot yellow"></span>
+                  <span class="branch-name">origin/design-shell</span>
+                  <span class="branch-count">4</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="branch-group">
+              <p class="section-title">Working tree</p>
+              <div class="file-tree">
+                <div class="file-row active">
+                  <span class="dot red"></span>
+                  <span>src/git/conflict-panel.tsx</span>
+                  <span class="small-mono">UU</span>
+                </div>
+                <div class="file-row">
+                  <span class="dot red"></span>
+                  <span>src/git/graph-store.ts</span>
+                  <span class="small-mono">UU</span>
+                </div>
+                <div class="file-row">
+                  <span class="dot green"></span>
+                  <span>src/ui/sidebar.tsx</span>
+                  <span class="small-mono">M</span>
+                </div>
+                <div class="file-row">
+                  <span class="dot blue"></span>
+                  <span>docs/git-viewer.md</span>
+                  <span class="small-mono">A</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="commit-draft">
+              <p class="section-title">Commit draft</p>
+              <textarea aria-label="Commit message draft">git: add branch graph and conflict resolution workspace</textarea>
+              <button class="btn primary" type="button" data-action="toast" data-message="Commit draft saved">Commit staged</button>
+            </section>
+          </div>
+        </aside>
+
+        <section class="main" aria-label="Git viewer screens">
+          <section class="screen active" data-screen="graph" data-od-id="git-graph-screen">
+            <header class="content-head">
+              <div class="content-heading">
+                <h1>Commit graph</h1>
+                <p>Branch topology, remotes, and working tree state in one scan.</p>
+              </div>
+              <div class="content-tools">
+                <input class="search" type="search" value="author:jiun path:src/git" aria-label="Filter commits" />
+                <button class="btn" type="button" data-action="toast" data-message="Filtered to current branch">Current branch</button>
+              </div>
+            </header>
+            <div class="content-scroll graph-wrap">
+              <div class="graph-table" role="table" aria-label="Commit graph table">
+                <div class="graph-row header" role="row">
+                  <div>Graph</div>
+                  <div>Branch</div>
+                  <div>Commit</div>
+                  <div>Author</div>
+                  <div>Time</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="lane two"></span>
+                      <span class="node two"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip selected">HEAD</span><span class="chip">feature</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Resolve graph cache after branch checkout</strong><span>Preserves lane state when switching between local and remote refs.</span></span></div>
+                  <div class="graph-cell mono-cell">J. Shin</div>
+                  <div class="graph-cell mono-cell">8m</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="lane two"></span>
+                      <span class="join"></span>
+                      <span class="node one"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip danger">conflict</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Merge origin/design-shell into feature/git-workspace</strong><span>Conflict queue created for graph-store and conflict-panel.</span></span></div>
+                  <div class="graph-cell mono-cell">merge</div>
+                  <div class="graph-cell mono-cell">21m</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="lane two"></span>
+                      <span class="lane three"></span>
+                      <span class="node three"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip success">origin</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Add repo explorer keyboard model</strong><span>Moves branch, tag, and file selection into a single navigation store.</span></span></div>
+                  <div class="graph-cell mono-cell">M. Park</div>
+                  <div class="graph-cell mono-cell">1h</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="lane two"></span>
+                      <span class="node two"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip">feature</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Render remote avatars in commit detail</strong><span>Uses cached identities when the network is offline.</span></span></div>
+                  <div class="graph-cell mono-cell">J. Shin</div>
+                  <div class="graph-cell mono-cell">2h</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="node one"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip">main</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Normalize dashboard panel spacing</strong><span>Locks the compact shell rhythm used across repository screens.</span></span></div>
+                  <div class="graph-cell mono-cell">A. Kim</div>
+                  <div class="graph-cell mono-cell">4h</div>
+                </div>
+
+                <div class="graph-row" role="row">
+                  <div class="graph-cell">
+                    <div class="graph-line">
+                      <span class="lane one"></span>
+                      <span class="node one"></span>
+                    </div>
+                  </div>
+                  <div class="graph-cell"><div class="tag-list"><span class="chip warn">tag v1.8</span></div></div>
+                  <div class="graph-cell"><span class="commit-copy"><strong>Ship review workspace shell</strong><span>Baseline titlebar, repo rail, and right-side action inspector.</span></span></div>
+                  <div class="graph-cell mono-cell">CI</div>
+                  <div class="graph-cell mono-cell">1d</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen" data-screen="resolve" data-od-id="merge-conflict-screen">
+            <header class="content-head">
+              <div class="content-heading">
+                <h1>Merge conflict resolver</h1>
+                <p>Queue conflicts, compare both sides, and stage the resolved file.</p>
+              </div>
+              <div class="content-tools">
+                <button class="btn" type="button" data-action="toast" data-message="Applied incoming block">Use incoming</button>
+                <button class="btn primary" type="button" data-action="toast" data-message="Resolution staged">Stage resolution</button>
+              </div>
+            </header>
+            <div class="conflict-layout">
+              <aside class="queue-panel" aria-label="Conflict queue">
+                <div class="panel-head">
+                  <strong>Conflict queue</strong>
+                  <span class="chip danger">2 files</span>
+                </div>
+                <div class="queue-item active">
+                  <div>
+                    <strong>conflict-panel.tsx</strong>
+                    <span>4 blocks - src/git</span>
+                  </div>
+                  <span class="chip danger">open</span>
+                </div>
+                <div class="queue-item">
+                  <div>
+                    <strong>graph-store.ts</strong>
+                    <span>1 block - src/git</span>
+                  </div>
+                  <span class="chip warn">next</span>
+                </div>
+                <div class="queue-item">
+                  <div>
+                    <strong>sidebar.tsx</strong>
+                    <span>resolved - src/ui</span>
+                  </div>
+                  <span class="chip success">staged</span>
+                </div>
+              </aside>
+
+              <section class="editor-panel" aria-label="Three-way merge editor">
+                <div class="editor-head">
+                  <strong>src/git/conflict-panel.tsx</strong>
+                  <span class="small-mono">block 2 of 4 - lines 72-91</span>
+                </div>
+                <div class="merge-grid">
+                  <section class="merge-pane">
+                    <div class="pane-label"><span>Current</span><span>feature</span></div>
+                    <div class="code-block">
+                      <div class="code-line"><span class="ln">72</span><span>const nextFile = queue[index + 1];</span></div>
+                      <div class="code-line remove"><span class="ln">73</span><span>setSelected(nextFile.path);</span></div>
+                      <div class="code-line remove"><span class="ln">74</span><span>setMode('compact');</span></div>
+                      <div class="code-line"><span class="ln">75</span><span>focusConflictBlock(nextFile.id);</span></div>
+                      <div class="code-line"><span class="ln">76</span><span>return nextFile;</span></div>
+                    </div>
+                  </section>
+                  <section class="merge-pane">
+                    <div class="pane-label"><span>Incoming</span><span>origin</span></div>
+                    <div class="code-block">
+                      <div class="code-line"><span class="ln">72</span><span>const nextFile = conflictQueue.at(index + 1);</span></div>
+                      <div class="code-line add"><span class="ln">73</span><span>setSelectedPath(nextFile.path);</span></div>
+                      <div class="code-line add"><span class="ln">74</span><span>setInspectorMode('resolution');</span></div>
+                      <div class="code-line"><span class="ln">75</span><span>focusConflictBlock(nextFile.blockId);</span></div>
+                      <div class="code-line"><span class="ln">76</span><span>return nextFile;</span></div>
+                    </div>
+                  </section>
+                  <section class="merge-pane">
+                    <div class="pane-label"><span>Resolved</span><span>staged preview</span></div>
+                    <div class="code-block">
+                      <div class="code-line"><span class="ln">72</span><span>const nextFile = conflictQueue.at(index + 1);</span></div>
+                      <div class="code-line focus"><span class="ln">73</span><span>setSelectedPath(nextFile.path);</span></div>
+                      <div class="code-line focus"><span class="ln">74</span><span>setInspectorMode('resolution');</span></div>
+                      <div class="code-line"><span class="ln">75</span><span>focusConflictBlock(nextFile.blockId);</span></div>
+                      <div class="code-line"><span class="ln">76</span><span>return nextFile;</span></div>
+                    </div>
+                  </section>
+                </div>
+                <div class="editor-actions">
+                  <span class="small-mono">Autosaved resolution draft locally</span>
+                  <div class="toolbar-actions">
+                    <button class="btn" type="button" data-action="toast" data-message="Marked block as unresolved">Reopen block</button>
+                    <button class="btn primary" type="button" data-action="toast" data-message="Moved to next conflict">Accept and next</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="screen" data-screen="sync" data-od-id="sync-review-screen">
+            <header class="content-head">
+              <div class="content-heading">
+                <h1>Sync review</h1>
+                <p>Confirm staged files, remote divergence, and checks before pushing.</p>
+              </div>
+              <div class="content-tools">
+                <button class="btn" type="button" data-action="toast" data-message="Rebased on origin/main">Rebase</button>
+                <button class="btn primary" type="button" data-action="toast" data-message="Pushed 2 commits to origin">Push 2 commits</button>
+              </div>
+            </header>
+            <div class="sync-layout">
+              <section class="sync-panel" aria-label="Staged changes">
+                <div class="panel-head">
+                  <strong>Staged changes</strong>
+                  <span class="chip selected">4 files</span>
+                </div>
+                <div class="changes-list">
+                  <div class="change-row">
+                    <span class="dot green"></span>
+                    <div><strong>conflict-panel.tsx</strong><span>resolved - 28 additions, 14 removals</span></div>
+                    <span class="chip success">ready</span>
+                  </div>
+                  <div class="change-row">
+                    <span class="dot green"></span>
+                    <div><strong>graph-store.ts</strong><span>resolved - cache invalidation path</span></div>
+                    <span class="chip success">ready</span>
+                  </div>
+                  <div class="change-row">
+                    <span class="dot blue"></span>
+                    <div><strong>sidebar.tsx</strong><span>modified - branch group keyboard focus</span></div>
+                    <span class="chip selected">staged</span>
+                  </div>
+                  <div class="change-row">
+                    <span class="dot blue"></span>
+                    <div><strong>git-viewer.md</strong><span>added - workspace behavior notes</span></div>
+                    <span class="chip selected">staged</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="sync-panel" aria-label="Push checklist">
+                <div class="panel-head">
+                  <strong>Push checklist</strong>
+                  <span class="chip warn">1 pending</span>
+                </div>
+                <div class="timeline">
+                  <div class="timeline-step done">
+                    <span class="step-index">1</span>
+                    <div><strong>Fetch remote refs</strong><span>origin/main is current as of 2 minutes ago.</span></div>
+                  </div>
+                  <div class="timeline-step done">
+                    <span class="step-index">2</span>
+                    <div><strong>Resolve merge conflicts</strong><span>Two conflicted files are staged with local resolution previews.</span></div>
+                  </div>
+                  <div class="timeline-step active">
+                    <span class="step-index">3</span>
+                    <div><strong>Run checks</strong><span>UI unit checks are still pending for the graph cache store.</span></div>
+                  </div>
+                  <div class="timeline-step">
+                    <span class="step-index">4</span>
+                    <div><strong>Push branch</strong><span>Two commits will update feature/git-workspace on origin.</span></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <aside class="detail" aria-label="Commit detail inspector">
+          <div class="detail-head">
+            <p class="section-title">Inspector</p>
+            <span class="chip selected">selected</span>
+          </div>
+          <div class="detail-scroll">
+            <section class="detail-card">
+              <h2>Resolve graph cache after branch checkout</h2>
+              <p>Selected commit updates lane persistence so SourceTree-style graph navigation and GitKraken-style branch context stay aligned after checkout.</p>
+            </section>
+
+            <section class="detail-card">
+              <h3>Commit metadata</h3>
+              <div class="status-list">
+                <div class="status-row">
+                  <strong>Hash</strong>
+                  <span class="small-mono">8f4c2a1</span>
+                </div>
+                <div class="status-row">
+                  <strong>Parent</strong>
+                  <span class="small-mono">42c91dd</span>
+                </div>
+                <div class="status-row">
+                  <strong>Branch</strong>
+                  <span class="small-mono">feature/git-workspace</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <h3>Files in commit</h3>
+              <div class="file-tree">
+                <div class="file-row active">
+                  <span class="dot blue"></span>
+                  <span>src/git/graph-store.ts</span>
+                  <span class="small-mono">M</span>
+                </div>
+                <div class="file-row">
+                  <span class="dot blue"></span>
+                  <span>src/git/graph-lanes.ts</span>
+                  <span class="small-mono">M</span>
+                </div>
+                <div class="file-row">
+                  <span class="dot green"></span>
+                  <span>src/git/cache.test.ts</span>
+                  <span class="small-mono">A</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <h3>Branch actions</h3>
+              <div class="status-list">
+                <button class="btn" type="button" data-action="toast" data-message="Checked out selected commit">Checkout detached</button>
+                <button class="btn" type="button" data-action="toast" data-message="Started cherry-pick flow">Cherry-pick</button>
+                <button class="btn danger" type="button" data-action="toast" data-message="Reset flow opened">Reset branch</button>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </main>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status">Workspace ready</div>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll('.view-tab'));
+    const screens = Array.from(document.querySelectorAll('.screen'));
+    const toast = document.getElementById('toast');
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('visible');
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 1800);
+    }
+
+    function setView(view) {
+      tabs.forEach((tab) => {
+        const active = tab.dataset.view === view;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+
+      screens.forEach((screen) => {
+        screen.classList.toggle('active', screen.dataset.screen === view);
+      });
+
+      window.localStorage.setItem('patchlineGitView', view);
+    }
+
+    document.addEventListener('click', (event) => {
+      const tab = event.target.closest('[data-view]');
+      if (tab) {
+        setView(tab.dataset.view);
+        return;
+      }
+
+      const action = event.target.closest('[data-action="toast"]');
+      if (action) {
+        showToast(action.dataset.message);
+      }
+    });
+
+    const savedView = window.localStorage.getItem('patchlineGitView');
+    if (savedView && screens.some((screen) => screen.dataset.screen === savedView)) {
+      setView(savedView);
+    }
+  </script>
+</body>
+</html>

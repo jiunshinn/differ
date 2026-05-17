@@ -12,8 +12,8 @@ function Shell() {
   const { state } = useApp();
 
   return (
-    <div className="h-full w-full p-3 sm:p-4 bg-bg overflow-hidden">
-      <div className="h-full w-full mx-auto bg-bg-panel border border-border rounded-card overflow-hidden grid grid-rows-[42px_48px_minmax(0,1fr)] shadow-raised">
+    <div className="h-full w-full bg-bg overflow-hidden">
+      <div className="h-full w-full bg-bg-panel overflow-hidden grid grid-rows-[48px_minmax(0,1fr)]">
         <TopBar />
         <main className="min-h-0">
           {state.view === 'picker' && <RepositoryPicker />}

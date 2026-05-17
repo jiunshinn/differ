@@ -2,6 +2,92 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Surfaces */
+  --color-bg: 250 250 250;
+  --color-bg-panel: 255 255 255;
+  --color-bg-subtle: 244 244 245;
+  --color-bg-muted: 239 239 239;
+  --color-bg-hover: 240 240 242;
+
+  /* Borders */
+  --color-border: 229 229 229;
+  --color-border-subtle: 237 237 237;
+  --color-border-strong: 212 212 212;
+
+  /* Text */
+  --color-text-primary: 17 17 17;
+  --color-text-secondary: 63 63 70;
+  --color-text-muted: 107 107 107;
+
+  /* Brand + semantic */
+  --color-accent: 47 111 235;
+  --color-accent-hover: 31 90 209;
+  --color-success: 23 163 74;
+  --color-warn: 234 179 8;
+  --color-danger: 220 38 38;
+
+  /* Shadows */
+  --shadow-raised: rgba(17, 17, 17, 0.08);
+  --shadow-card: rgba(17, 17, 17, 0.04);
+
+  /* Diff helpers (used by hand-rolled CSS below) */
+  --scrollbar-thumb: rgba(17, 17, 17, 0.15);
+  --scrollbar-thumb-hover: rgba(17, 17, 17, 0.28);
+  --diff-row-border: rgba(229, 229, 229, 0.65);
+  --diff-gutter-border: rgba(229, 229, 229, 0.75);
+  --diff-add-bg: rgba(23, 163, 74, 0.09);
+  --diff-del-bg: rgba(220, 38, 38, 0.08);
+  --diff-selected-bg: rgba(47, 111, 235, 0.08);
+  --diff-comment-bg: rgba(47, 111, 235, 0.05);
+  --diff-empty-stripe: rgba(17, 17, 17, 0.025);
+  --diff-gutter-context: 156 163 175;
+  --diff-hunk-bg: 250 250 250;
+}
+
+.dark {
+  /* Surfaces */
+  --color-bg: 13 17 23;
+  --color-bg-panel: 22 27 34;
+  --color-bg-subtle: 28 33 40;
+  --color-bg-muted: 26 31 38;
+  --color-bg-hover: 33 38 45;
+
+  /* Borders */
+  --color-border: 48 54 61;
+  --color-border-subtle: 33 38 45;
+  --color-border-strong: 68 76 86;
+
+  /* Text */
+  --color-text-primary: 230 237 243;
+  --color-text-secondary: 201 209 217;
+  --color-text-muted: 139 148 158;
+
+  /* Brand + semantic */
+  --color-accent: 88 166 255;
+  --color-accent-hover: 121 184 255;
+  --color-success: 63 185 80;
+  --color-warn: 210 153 34;
+  --color-danger: 248 81 73;
+
+  /* Shadows */
+  --shadow-raised: rgba(0, 0, 0, 0.55);
+  --shadow-card: rgba(0, 0, 0, 0.35);
+
+  /* Diff helpers */
+  --scrollbar-thumb: rgba(230, 237, 243, 0.18);
+  --scrollbar-thumb-hover: rgba(230, 237, 243, 0.32);
+  --diff-row-border: rgba(48, 54, 61, 0.6);
+  --diff-gutter-border: rgba(48, 54, 61, 0.85);
+  --diff-add-bg: rgba(63, 185, 80, 0.14);
+  --diff-del-bg: rgba(248, 81, 73, 0.14);
+  --diff-selected-bg: rgba(88, 166, 255, 0.16);
+  --diff-comment-bg: rgba(88, 166, 255, 0.10);
+  --diff-empty-stripe: rgba(230, 237, 243, 0.04);
+  --diff-gutter-context: 110 118 129;
+  --diff-hunk-bg: 22 27 34;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -9,8 +95,8 @@ html, body, #root {
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;
-  background: #FAFAFA;
-  color: #111111;
+  background: rgb(var(--color-bg));
+  color: rgb(var(--color-text-primary));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-user-select: none;
@@ -28,13 +114,13 @@ input, textarea, [contenteditable='true'] {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(17, 17, 17, 0.15);
+  background: var(--scrollbar-thumb);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(17, 17, 17, 0.28);
+  background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
   border: 2px solid transparent;
 }
@@ -98,7 +184,7 @@ input, textarea, [contenteditable='true'] {
   font-size: 12px;
   line-height: 1.6;
   min-height: 22px;
-  border-bottom: 1px solid rgba(229, 229, 229, 0.65);
+  border-bottom: 1px solid var(--diff-row-border);
 }
 .diff-line:last-child {
   border-bottom: 0;
@@ -106,42 +192,42 @@ input, textarea, [contenteditable='true'] {
 .diff-line .gut {
   text-align: right;
   padding: 2px 8px;
-  color: #6B6B6B;
+  color: rgb(var(--color-text-muted));
   user-select: none;
-  border-right: 1px solid rgba(229, 229, 229, 0.75);
+  border-right: 1px solid var(--diff-gutter-border);
   font-variant-numeric: tabular-nums;
 }
 .diff-line.add {
-  background: rgba(23, 163, 74, 0.09);
+  background: var(--diff-add-bg);
 }
 .diff-line.add .gut {
-  color: #17A34A;
+  color: rgb(var(--color-success));
 }
 .diff-line.del {
-  background: rgba(220, 38, 38, 0.08);
+  background: var(--diff-del-bg);
 }
 .diff-line.del .gut {
-  color: #DC2626;
+  color: rgb(var(--color-danger));
 }
 .diff-line.context .gut {
-  color: #9CA3AF;
+  color: rgb(var(--diff-gutter-context));
 }
 .diff-line .body {
   padding: 2px 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
-  color: #111111;
+  color: rgb(var(--color-text-primary));
 }
 .diff-line.add .body::before {
   content: '+';
-  color: #17A34A;
+  color: rgb(var(--color-success));
   font-weight: 600;
   margin-right: 6px;
 }
 .diff-line.del .body::before {
   content: '-';
-  color: #DC2626;
+  color: rgb(var(--color-danger));
   font-weight: 600;
   margin-right: 6px;
 }
@@ -149,12 +235,12 @@ input, textarea, [contenteditable='true'] {
   content: ' ';
   margin-right: 6px;
 }
-.diff-line.selected .body { background: rgba(47, 111, 235, 0.08); }
+.diff-line.selected .body { background: var(--diff-selected-bg); }
 .diff-line.has-comment {
-  background: rgba(47, 111, 235, 0.05);
+  background: var(--diff-comment-bg);
 }
 .diff-line.has-comment .gut {
-  color: #2F6FEB;
+  color: rgb(var(--color-accent));
 }
 
 /* Split (side-by-side) mode: single gutter per pane, no inline +/- prefix. */
@@ -170,8 +256,8 @@ input, textarea, [contenteditable='true'] {
 .diff-line.split.empty {
   background: repeating-linear-gradient(
     135deg,
-    rgba(17, 17, 17, 0.025),
-    rgba(17, 17, 17, 0.025) 6px,
+    var(--diff-empty-stripe),
+    var(--diff-empty-stripe) 6px,
     transparent 6px,
     transparent 12px
   );
@@ -181,12 +267,12 @@ input, textarea, [contenteditable='true'] {
 }
 
 .hunk-header {
-  background: #FAFAFA;
-  color: #6B6B6B;
+  background: rgb(var(--diff-hunk-bg));
+  color: rgb(var(--color-text-muted));
   font-family: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   padding: 8px 12px;
-  border-bottom: 1px solid #E5E5E5;
+  border-bottom: 1px solid rgb(var(--color-border));
   display: flex;
   align-items: center;
   justify-content: space-between;
