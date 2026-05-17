@@ -3,7 +3,7 @@ import { useApp } from '../state/AppStore';
 import ChangedFilesPanel from '../components/ChangedFilesPanel';
 import DiffViewer from '../components/DiffViewer';
 import ReviewPanel from '../components/ReviewPanel';
-import LeftRail from '../components/LeftRail';
+import CommitBar from '../components/CommitBar';
 import ResizableLayout from '../components/ResizableLayout';
 
 export default function LocalChangesView() {
@@ -79,14 +79,19 @@ export default function LocalChangesView() {
       storageKey="local-changes"
       className="h-full w-full min-h-0 bg-bg-panel"
       panes={[
-        { defaultSize: 220, minSize: 180, maxSize: 360 },
-        { defaultSize: 260, minSize: 200, maxSize: 480 },
+        { defaultSize: 300, minSize: 240, maxSize: 520 },
         { defaultSize: 0, minSize: 320, flex: true },
         { defaultSize: 360, minSize: 280, maxSize: 600 },
       ]}
     >
-      <LeftRail />
-      <ChangedFilesPanel />
+      <div className="flex flex-col min-h-0 border-r border-border bg-bg">
+        <ChangedFilesPanel />
+        {state.session && (
+          <div className="p-3.5 border-t border-border shrink-0">
+            <CommitBar />
+          </div>
+        )}
+      </div>
       <DiffViewer />
       <ReviewPanel />
     </ResizableLayout>

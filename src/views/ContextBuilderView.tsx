@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
-import LeftRail from '../components/LeftRail';
 import ResizableLayout from '../components/ResizableLayout';
 
 export default function ContextBuilderView() {
@@ -45,19 +44,7 @@ export default function ContextBuilderView() {
   ]);
 
   if (!state.repo || !state.session) {
-    return (
-      <ResizableLayout
-        storageKey="context-empty"
-        className="h-full w-full min-h-0"
-        panes={[
-          { defaultSize: 220, minSize: 180, maxSize: 360 },
-          { defaultSize: 0, minSize: 280, flex: true },
-        ]}
-      >
-        <LeftRail />
-        <div className="p-8 text-text-muted">Open a repository first.</div>
-      </ResizableLayout>
-    );
+    return <div className="h-full w-full min-h-0 bg-bg p-8 text-text-muted">Open a repository first.</div>;
   }
 
   const generate = async () => {
@@ -116,13 +103,10 @@ export default function ContextBuilderView() {
       storageKey="context-builder"
       className="h-full w-full min-h-0 bg-bg-panel"
       panes={[
-        { defaultSize: 220, minSize: 180, maxSize: 360 },
         { defaultSize: 420, minSize: 320, maxSize: 640 },
         { defaultSize: 0, minSize: 360, flex: true },
       ]}
     >
-      <LeftRail />
-
       <aside className="overflow-auto border-r border-border p-4 bg-bg grid gap-3.5 content-start">
         <div>
           <div className="section-label mb-1.5">Task</div>

@@ -7,6 +7,7 @@ import type {
   CommitSummary,
   ContextExtractionInput,
   ContextExtractionResult,
+  FileContent,
   FileDiff,
   FileReviewState,
   FileReviewStatus,
@@ -19,6 +20,7 @@ import type {
   Repository,
   ReviewComment,
   ReviewSession,
+  TreeEntry,
 } from '@shared/types';
 
 // This must match the preload's exposed API exactly. We model it on the renderer side.
@@ -44,6 +46,8 @@ export interface DifferApi {
   discardFile: (repoId: number, filePath: string) => Promise<boolean>;
   commit: (repoId: number, message: string) => Promise<boolean>;
   amend: (repoId: number, message: string | null) => Promise<boolean>;
+  listTree: (repoId: number, relDir?: string) => Promise<TreeEntry[]>;
+  readFile: (repoId: number, relPath: string) => Promise<FileContent>;
 
   fileDiff: (
     repoId: number,

@@ -4,7 +4,6 @@ import { api } from '../api';
 import { cn } from '../utils/cn';
 import CommentComposer from '../components/CommentComposer';
 import ReviewPanel from '../components/ReviewPanel';
-import LeftRail from '../components/LeftRail';
 import ResizableLayout from '../components/ResizableLayout';
 import type { FileDiff, GithubPullRequestDetail, GithubReviewEvent } from '@shared/types';
 
@@ -63,13 +62,11 @@ export default function PullRequestDetailView() {
       storageKey="pr-detail"
       className="h-full w-full min-h-0 bg-bg-panel"
       panes={[
-        { defaultSize: 220, minSize: 180, maxSize: 360 },
-        { defaultSize: 260, minSize: 200, maxSize: 480 },
+        { defaultSize: 300, minSize: 240, maxSize: 520 },
         { defaultSize: 0, minSize: 320, flex: true },
         { defaultSize: 360, minSize: 280, maxSize: 600 },
       ]}
     >
-      <LeftRail />
       <aside className="overflow-auto border-r border-border bg-bg p-3.5">
         <section className="panel-card p-3 mb-3.5">
           <div className="text-xs text-text-muted font-mono">PR</div>

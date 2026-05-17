@@ -18,6 +18,9 @@
   },
   "dependencies": {
     "@octokit/rest": "^20.1.2",
+    "@uiw/codemirror-extensions-langs": "^4.25.9",
+    "@uiw/codemirror-theme-github": "^4.25.9",
+    "@uiw/react-codemirror": "^4.25.9",
     "better-sqlite3": "^11.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

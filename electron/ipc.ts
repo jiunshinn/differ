@@ -32,6 +32,7 @@ import {
   setRepositoryPinned,
   upsertRepository,
 } from './services/repoStore';
+import { listTree, readFile as readRepoFile } from './services/fileTree';
 import { ensureLocalSession, ensurePrSession, getSession } from './services/sessionStore';
 import {
   createComment,
@@ -189,6 +190,16 @@ export function registerIpcHandlers(deps: Deps): void {
     const repo = mustRepo(repoId);
     await amend(repo.path, message);
     return true;
+  });
+
+  handle(IpcChannels.repoListTree, async (repoId: number, relDir?: string) => {
+    const repo = mustRepo(repoId);
+    return listTree(repo.path, relDir ?? '');
+  });
+
+  handle(IpcChannels.repoReadFile, async (repoId: number, relPath: string) => {
+    const repo = mustRepo(repoId);
+    return readRepoFile(repo.path, relPath);
   });
 
   // Diff

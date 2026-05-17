@@ -3,8 +3,6 @@ import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import type { GithubAuthState, GithubPullRequestSummary } from '@shared/types';
 import { cn } from '../utils/cn';
-import LeftRail from '../components/LeftRail';
-import ResizableLayout from '../components/ResizableLayout';
 
 export default function PullRequestsView() {
   const { state, dispatch, toast } = useApp();
@@ -52,16 +50,8 @@ export default function PullRequestsView() {
   };
 
   return (
-    <ResizableLayout
-      storageKey="pr-list"
-      className="h-full w-full min-h-0 bg-bg-panel"
-      panes={[
-        { defaultSize: 220, minSize: 180, maxSize: 360 },
-        { defaultSize: 0, minSize: 320, flex: true },
-      ]}
-    >
-      <LeftRail />
-      <section className="overflow-auto p-6 bg-bg">
+    <div className="h-full w-full min-h-0 bg-bg-panel">
+      <section className="h-full overflow-auto p-6 bg-bg">
         <header className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Pull requests</h1>
@@ -124,6 +114,6 @@ export default function PullRequestsView() {
           </div>
         )}
       </section>
-    </ResizableLayout>
+    </div>
   );
 }

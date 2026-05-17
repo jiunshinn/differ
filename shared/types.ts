@@ -143,6 +143,24 @@ export interface DiffOptions {
   includeUntracked?: boolean;
 }
 
+// File tree
+
+export type TreeEntryKind = 'dir' | 'file';
+
+export interface TreeEntry {
+  name: string;
+  path: string; // repo-relative, forward slashes
+  kind: TreeEntryKind;
+}
+
+export interface FileContent {
+  path: string;
+  text: string | null; // null when binary or unreadable
+  isBinary: boolean;
+  size: number;
+  truncated: boolean;
+}
+
 export interface BranchInfo {
   name: string;
   isCurrent: boolean;
@@ -268,6 +286,8 @@ export const IpcChannels = {
   repoDiscardFile: 'repo:discardFile',
   repoCommit: 'repo:commit',
   repoAmend: 'repo:amend',
+  repoListTree: 'repo:listTree',
+  repoReadFile: 'repo:readFile',
 
   // Diff
   diffFile: 'diff:file',

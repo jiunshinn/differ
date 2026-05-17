@@ -10,7 +10,7 @@ import type {
   ReviewSession,
 } from '@shared/types';
 
-export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context' | 'history';
+export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context' | 'history' | 'code';
 export type RightPanelTab = 'overview' | 'comments' | 'context';
 export type HistoryTab = 'graph' | 'resolve' | 'sync';
 

@@ -30,6 +30,8 @@ const api = {
   discardFile: (repoId: number, filePath: string) => invoke(IpcChannels.repoDiscardFile, repoId, filePath),
   commit: (repoId: number, message: string) => invoke(IpcChannels.repoCommit, repoId, message),
   amend: (repoId: number, message: string | null) => invoke(IpcChannels.repoAmend, repoId, message),
+  listTree: (repoId: number, relDir?: string) => invoke(IpcChannels.repoListTree, repoId, relDir ?? ''),
+  readFile: (repoId: number, relPath: string) => invoke(IpcChannels.repoReadFile, repoId, relPath),
 
   // Diff
   fileDiff: (

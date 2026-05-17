@@ -77,7 +77,7 @@ export default function ChangedFilesPanel() {
   const fileStateMap = new Map(state.fileStates.map((s) => [s.file_path, s.status] as const));
 
   return (
-    <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+    <aside className="flex-1 min-h-0 overflow-auto p-3.5">
       <input
         className="input"
         aria-label="Filter files"
