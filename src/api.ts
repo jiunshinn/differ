@@ -35,8 +35,12 @@ export interface DifferApi {
   branches: (repoId: number) => Promise<BranchInfo[]>;
   commits: (repoId: number, limit?: number) => Promise<CommitSummary[]>;
   fetch: (repoId: number) => Promise<boolean>;
-  pull: (repoId: number) => Promise<boolean>;
+  pull: (repoId: number, opts?: { rebase?: boolean }) => Promise<boolean>;
   push: (repoId: number, opts?: { setUpstream?: boolean }) => Promise<boolean>;
+  sync: (repoId: number) => Promise<boolean>;
+  rebaseContinue: (repoId: number) => Promise<boolean>;
+  rebaseAbort: (repoId: number) => Promise<boolean>;
+  mergeAbort: (repoId: number) => Promise<boolean>;
   checkout: (repoId: number, branch: string) => Promise<boolean>;
   createBranch: (repoId: number, branch: string, checkout: boolean) => Promise<boolean>;
   stageFile: (repoId: number, filePath: string) => Promise<boolean>;

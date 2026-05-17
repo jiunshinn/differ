@@ -112,9 +112,36 @@ export async function getDefaultBranch(cwd: string): Promise<string | null> {
   }
 }
 
+async function gitPath(cwd: string, name: string): Promise<string | null> {
+  try {
+    const r = await runGit(['rev-parse', '--git-path', name], { cwd });
+    return r.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getOperationState(cwd: string): Promise<{ rebaseInProgress: boolean; mergeInProgress: boolean }> {
+  const [rebaseMerge, rebaseApply, mergeHead] = await Promise.all([
+    gitPath(cwd, 'rebase-merge'),
+    gitPath(cwd, 'rebase-apply'),
+    gitPath(cwd, 'MERGE_HEAD'),
+  ]);
+  const rebaseInProgress =
+    (!!rebaseMerge && fs.existsSync(rebaseMerge)) || (!!rebaseApply && fs.existsSync(rebaseApply));
+  const mergeInProgress = !!mergeHead && fs.existsSync(mergeHead);
+  return { rebaseInProgress, mergeInProgress };
+}
+
 export async function getStatus(cwd: string): Promise<RepoStatus> {
-  const r = await runGit(['status', '--porcelain=v2', '--branch', '-z'], { cwd });
-  return parsePorcelainV2(r.stdout);
+  const [r, op] = await Promise.all([
+    runGit(['status', '--porcelain=v2', '--branch', '-z'], { cwd }),
+    getOperationState(cwd),
+  ]);
+  const status = parsePorcelainV2(r.stdout);
+  status.rebaseInProgress = op.rebaseInProgress;
+  status.mergeInProgress = op.mergeInProgress;
+  return status;
 }
 
 function parsePorcelainV2(out: string): RepoStatus {
@@ -125,6 +152,8 @@ function parsePorcelainV2(out: string): RepoStatus {
     behind: 0,
     detached: false,
     files: [],
+    rebaseInProgress: false,
+    mergeInProgress: false,
   };
   // Records are NUL-separated. But rename records contain an extra NUL-separated original path,
   // so we tokenize manually with a stateful walker.
@@ -563,8 +592,19 @@ export async function fetch(cwd: string): Promise<void> {
   await runGit(['fetch', '--all', '--prune'], { cwd });
 }
 
-export async function pull(cwd: string): Promise<void> {
-  await runGit(['pull', '--ff-only'], { cwd });
+export async function pull(cwd: string, opts: { rebase?: boolean } = {}): Promise<void> {
+  const args = ['pull'];
+  if (opts.rebase) args.push('--rebase');
+  else args.push('--ff-only');
+  await runGit(args, { cwd });
+}
+
+export async function syncWithRemote(cwd: string): Promise<void> {
+  // Pull --rebase first to integrate remote commits underneath local ones, then push.
+  // If rebase encounters conflicts it pauses and exits non-zero — that surfaces as a GitError
+  // so the UI can route the user to the Resolve view.
+  await runGit(['pull', '--rebase'], { cwd });
+  await runGit(['push'], { cwd });
 }
 
 export async function push(cwd: string, opts: { setUpstream?: boolean } = {}): Promise<void> {
@@ -575,6 +615,19 @@ export async function push(cwd: string, opts: { setUpstream?: boolean } = {}): P
   } else {
     await runGit(['push'], { cwd });
   }
+}
+
+export async function rebaseContinue(cwd: string): Promise<void> {
+  // GIT_EDITOR=true skips the commit-message editor when continuing a rebase.
+  await runGit(['rebase', '--continue'], { cwd, env: { GIT_EDITOR: 'true' } });
+}
+
+export async function rebaseAbort(cwd: string): Promise<void> {
+  await runGit(['rebase', '--abort'], { cwd });
+}
+
+export async function mergeAbort(cwd: string): Promise<void> {
+  await runGit(['merge', '--abort'], { cwd });
 }
 
 export async function checkout(cwd: string, branch: string): Promise<void> {

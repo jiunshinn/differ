@@ -71,6 +71,7 @@ export interface AppState {
   // activity log
   activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
+  lastFetchedAt: number | null;
 }
 
 type Action =
@@ -96,7 +97,8 @@ type Action =
   | { type: 'toggleLineRangeSelection'; range: LineRangeSelection; on?: boolean }
   | { type: 'clearSelections' }
   | { type: 'pushActivity'; event: Omit<ActivityEvent, 'id' | 'at'> & { at?: number } }
-  | { type: 'toast'; toast: AppState['toast'] };
+  | { type: 'toast'; toast: AppState['toast'] }
+  | { type: 'setLastFetchedAt'; at: number | null };
 
 const initial: AppState = {
   view: 'picker',
@@ -122,6 +124,7 @@ const initial: AppState = {
   selectedLineRanges: [],
   activity: [],
   toast: null,
+  lastFetchedAt: null,
 };
 
 let activityIdSeq = 1;
@@ -224,6 +227,8 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'toast':
       return { ...state, toast: action.toast };
+    case 'setLastFetchedAt':
+      return { ...state, lastFetchedAt: action.at };
     default:
       return state;
   }
@@ -238,6 +243,7 @@ interface Ctx {
   loadFileStates: () => Promise<void>;
   logActivity: (event: Omit<ActivityEvent, 'id' | 'at'>) => void;
   toast: (kind: 'info' | 'success' | 'error', message: string) => void;
+  silentFetch: () => Promise<void>;
 }
 
 const AppContext = createContext<Ctx | null>(null);
@@ -325,6 +331,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'setFileStates', states });
   }, []);
 
+  const silentFetch = useCallback(async () => {
+    const s = stateRef.current;
+    if (!s.repo) return;
+    try {
+      await api.fetch(s.repo.id);
+      dispatch({ type: 'setLastFetchedAt', at: Date.now() });
+      const status = await api.status(s.repo.id);
+      dispatch({ type: 'setStatus', status });
+    } catch {
+      // Silent — auto-fetch failures (auth/network) should not toast.
+    }
+  }, []);
+
+  // Reset lastFetchedAt when the repo changes so the freshness hint is per-repo.
+  useEffect(() => {
+    dispatch({ type: 'setLastFetchedAt', at: null });
+  }, [state.repo?.id]);
+
   useEffect(() => {
     if (state.repo && state.session) {
       void loadComments();
@@ -333,8 +357,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.repo, state.session, loadComments, loadFileStates]);
 
   const value = useMemo<Ctx>(
-    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast }),
-    [state, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast],
+    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch }),
+    [state, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
