@@ -226,7 +226,7 @@ function AccountChip({
       : `${accounts.length} accounts: ${accounts.map((a) => '@' + a.login).join(', ')}`;
   return (
     <button
-      className="btn-icon flex items-center gap-1 px-2"
+      className="btn w-auto px-2"
       onClick={onClick}
       title={title}
       aria-label={title}
