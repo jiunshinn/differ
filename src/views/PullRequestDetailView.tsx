@@ -58,87 +58,89 @@ export default function PullRequestDetailView() {
   }
 
   return (
-    <ResizableLayout
-      storageKey="pr-detail"
-      className="h-full w-full min-h-0 bg-bg-panel"
-      panes={[
-        { defaultSize: 300, minSize: 240, maxSize: 520 },
-        { defaultSize: 0, minSize: 320, flex: true },
-        { defaultSize: 360, minSize: 280, maxSize: 600 },
-      ]}
-    >
-      <aside className="overflow-auto border-r border-border bg-bg p-3.5">
-        <section className="panel-card p-3 mb-3.5">
-          <div className="text-xs text-text-muted font-mono">PR</div>
-          <div className="text-sm font-semibold leading-tight mt-1">
-            #{detail.number} {detail.title}
-          </div>
-          <div className="text-xs text-text-muted mt-1.5 font-mono">
-            {detail.author} · {detail.headRef} → {detail.baseRef}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
-              Back
-            </button>
-            <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
-              Submit
-            </button>
-          </div>
-          <button
-            className="btn w-full mt-2"
-            onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
-          >
-            Open on GitHub ↗
-          </button>
-        </section>
-
-        <div className="section-label mb-2">Changed files</div>
-        <div className="grid gap-[3px]">
-          {diffs.map((d) => (
-            <button
-              key={d.filePath}
-              className={cn(
-                'w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 min-w-0 border',
-                selectedPath === d.filePath
-                  ? 'bg-bg-panel border-border shadow-card'
-                  : 'border-transparent hover:bg-bg-subtle',
-              )}
-              onClick={() => setSelectedPath(d.filePath)}
-            >
-              <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
-                {d.filePath}
-              </span>
-              {d.isNew && <span className="tag">new</span>}
-              {d.isDeleted && <span className="tag">del</span>}
-              {d.isRenamed && <span className="tag">ren</span>}
-            </button>
-          ))}
-          {!diffs.length && (
-            <div className="p-3 text-xs text-text-muted">
-              No diff available. The PR head may have moved; try re-checking out.
+    <>
+      <ResizableLayout
+        storageKey="pr-detail"
+        className="h-full w-full min-h-0 bg-bg-panel"
+        panes={[
+          { defaultSize: 300, minSize: 240, maxSize: 520 },
+          { defaultSize: 0, minSize: 320, flex: true },
+          { defaultSize: 360, minSize: 280, maxSize: 600 },
+        ]}
+      >
+        <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+          <section className="panel-card p-3 mb-3.5">
+            <div className="text-xs text-text-muted font-mono">PR</div>
+            <div className="text-sm font-semibold leading-tight mt-1">
+              #{detail.number} {detail.title}
             </div>
+            <div className="text-xs text-text-muted mt-1.5 font-mono">
+              {detail.author} · {detail.headRef} → {detail.baseRef}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
+                Back
+              </button>
+              <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
+                Submit
+              </button>
+            </div>
+            <button
+              className="btn w-full mt-2"
+              onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
+            >
+              Open on GitHub ↗
+            </button>
+          </section>
+
+          <div className="section-label mb-2">Changed files</div>
+          <div className="grid gap-[3px]">
+            {diffs.map((d) => (
+              <button
+                key={d.filePath}
+                className={cn(
+                  'w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 min-w-0 border',
+                  selectedPath === d.filePath
+                    ? 'bg-bg-panel border-border shadow-card'
+                    : 'border-transparent hover:bg-bg-subtle',
+                )}
+                onClick={() => setSelectedPath(d.filePath)}
+              >
+                <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
+                  {d.filePath}
+                </span>
+                {d.isNew && <span className="tag">new</span>}
+                {d.isDeleted && <span className="tag">del</span>}
+                {d.isRenamed && <span className="tag">ren</span>}
+              </button>
+            ))}
+            {!diffs.length && (
+              <div className="p-3 text-xs text-text-muted">
+                No diff available. The PR head may have moved; try re-checking out.
+              </div>
+            )}
+          </div>
+        </aside>
+        <div className="min-h-0 flex flex-col">
+          {selectedDiff ? (
+            <PrFileDiff
+              diff={selectedDiff}
+              onLineComment={(side, line, hunkHeader) =>
+                setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiff.filePath })
+              }
+              onHunkComment={(hunkHeader) =>
+                setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiff.filePath })
+              }
+              onFileComment={() =>
+                setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiff.filePath })
+              }
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
           )}
         </div>
-      </aside>
-      <div className="min-h-0 flex flex-col">
-        {selectedDiff ? (
-          <PrFileDiff
-            diff={selectedDiff}
-            onLineComment={(side, line, hunkHeader) =>
-              setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiff.filePath })
-            }
-            onHunkComment={(hunkHeader) =>
-              setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiff.filePath })
-            }
-            onFileComment={() =>
-              setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiff.filePath })
-            }
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
-        )}
-      </div>
-      <ReviewPanel />
+        <ReviewPanel />
+      </ResizableLayout>
       {composer && state.session && (
         <CommentComposer
           filePath={composer.filePath}
@@ -150,7 +152,7 @@ export default function PullRequestDetailView() {
         />
       )}
       {submitOpen && <SubmitReviewDialog detail={detail} onClose={() => setSubmitOpen(false)} />}
-    </ResizableLayout>
+    </>
   );
 }
 
