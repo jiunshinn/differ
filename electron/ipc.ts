@@ -50,18 +50,21 @@ import {
 import { listFileStates, setFileState } from './services/fileReviewStore';
 import { previewContext, saveContext } from './services/contextService';
 import {
-  clearAuth,
-  getAuthStatus,
+  addAccount,
   getIssueDetail,
   getPullRequestDetail,
-  getStoredToken,
+  getTokenForAccount,
+  listAccounts,
+  listAllRepos,
   listCheckRuns,
   listIssues,
   listMyOrgs,
-  listMyRepos,
   listOrgRepos,
   listPullRequests,
-  setToken,
+  listReposBoundToAccount,
+  rebindRepos,
+  removeAccount,
+  setAccountForRepo,
   submitReview,
 } from './services/githubService';
 import {
@@ -124,9 +127,10 @@ export function registerIpcHandlers(deps: Deps): void {
     const folder = (req.folderName && req.folderName.trim()) || deriveCloneFolderName(req.remoteUrl);
     if (!folder) throw new Error('Could not derive a target folder name from the URL');
     const dest = path.join(req.parentDir, folder);
-    const authToken = req.useAuthToken ? getStoredToken() : null;
+    const authToken =
+      req.useAuthToken && req.accountId != null ? getTokenForAccount(req.accountId) : null;
     const cloned = await gitClone(req.remoteUrl, dest, { authToken });
-    return openRepoAtPath(cloned);
+    return openRepoAtPath(cloned, req.accountId ?? null);
   });
 
   handle(IpcChannels.repoRecent, async () => listRecentRepositories());
@@ -358,9 +362,30 @@ export function registerIpcHandlers(deps: Deps): void {
 
   // GitHub
 
-  handle(IpcChannels.ghAuthStatus, async () => getAuthStatus());
-  handle(IpcChannels.ghAuthSetToken, async (token: string) => setToken(token));
-  handle(IpcChannels.ghAuthClear, async () => clearAuth());
+  handle(IpcChannels.ghAuthList, async () => ({ accounts: await listAccounts() }));
+  handle(IpcChannels.ghAuthAddToken, async (token: string) => addAccount(token));
+  handle(IpcChannels.ghAuthRemove, async (accountId: number) => {
+    await removeAccount(accountId);
+    return { accounts: await listAccounts() };
+  });
+  handle(IpcChannels.ghAuthListReposForAccount, async (accountId: number) => {
+    const ids = listReposBoundToAccount(accountId);
+    return ids
+      .map((id) => getRepositoryById(id))
+      .filter((r): r is NonNullable<ReturnType<typeof getRepositoryById>> => r != null);
+  });
+  handle(
+    IpcChannels.ghAuthRebindRepos,
+    async (fromAccountId: number, toAccountId: number | null) => rebindRepos(fromAccountId, toAccountId),
+  );
+  handle(
+    IpcChannels.ghAuthSetRepoAccount,
+    async (repoId: number, accountId: number | null) => {
+      mustRepo(repoId);
+      setAccountForRepo(repoId, accountId);
+      return getRepositoryById(repoId);
+    },
+  );
 
   handle(IpcChannels.ghOauthConfig, async () => getOAuthConfig());
   handle(IpcChannels.ghOauthStart, async () => startDeviceFlow());
@@ -370,70 +395,64 @@ export function registerIpcHandlers(deps: Deps): void {
     return true;
   });
 
-  handle(IpcChannels.ghListMyRepos, async () => listMyRepos());
-  handle(IpcChannels.ghListMyOrgs, async () => listMyOrgs());
-  handle(IpcChannels.ghListOrgRepos, async (org: string) => listOrgRepos(org));
+  handle(IpcChannels.ghListAllRepos, async () => listAllRepos());
+  handle(IpcChannels.ghListMyOrgs, async (accountId: number) => listMyOrgs(accountId));
+  handle(IpcChannels.ghListOrgRepos, async (accountId: number, org: string) =>
+    listOrgRepos(accountId, org),
+  );
 
   handle(IpcChannels.ghPrList, async (repoId: number, state?: GithubPullRequestStateFilter) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return listPullRequests(repo.github_owner, repo.github_repo, state ?? 'open');
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    return listPullRequests(accountId, owner, repo, state ?? 'open');
   });
 
   handle(IpcChannels.ghPrDetail, async (repoId: number, prNumber: number) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return getPullRequestDetail(repo.github_owner, repo.github_repo, prNumber);
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    return getPullRequestDetail(accountId, owner, repo, prNumber);
   });
 
   handle(IpcChannels.ghPrCheckout, async (repoId: number, prNumber: number) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    const detail = await getPullRequestDetail(repo.github_owner, repo.github_repo, prNumber);
+    const repoRow = mustRepo(repoId);
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    const detail = await getPullRequestDetail(accountId, owner, repo, prNumber);
     // Make the PR head and base reachable locally so the diff view (origin/<base>..<headSha>)
     // resolves. Do not touch the working tree — viewing a PR should not switch branches.
     const { runGit } = await import('./services/git');
-    await runGit(['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repo.path });
-    await runGit(['fetch', 'origin', detail.baseRef], { cwd: repo.path });
+    await runGit(['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repoRow.path });
+    await runGit(['fetch', 'origin', detail.baseRef], { cwd: repoRow.path });
     return ensurePrSession(repoId, prNumber, detail.headSha, detail.baseSha, detail.headRef, detail.baseRef);
   });
 
   handle(IpcChannels.ghPrSubmitReview, async (repoId: number, input: GithubSubmitReviewInput) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    await submitReview(repo.github_owner, repo.github_repo, input);
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    await submitReview(accountId, owner, repo, input);
     return true;
   });
 
   handle(IpcChannels.ghPrOpenInBrowser, async (repoId: number, prNumber: number) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    await shell.openExternal(`https://github.com/${repo.github_owner}/${repo.github_repo}/pull/${prNumber}`);
+    const { owner, repo } = mustGithubRepo(repoId);
+    await shell.openExternal(`https://github.com/${owner}/${repo}/pull/${prNumber}`);
     return true;
   });
 
   handle(IpcChannels.ghPrChecks, async (repoId: number, ref: string) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return listCheckRuns(repo.github_owner, repo.github_repo, ref);
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    return listCheckRuns(accountId, owner, repo, ref);
   });
 
   handle(IpcChannels.ghIssueList, async (repoId: number, state?: GithubIssueStateFilter) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return listIssues(repo.github_owner, repo.github_repo, state ?? 'open');
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    return listIssues(accountId, owner, repo, state ?? 'open');
   });
 
   handle(IpcChannels.ghIssueDetail, async (repoId: number, issueNumber: number) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return getIssueDetail(repo.github_owner, repo.github_repo, issueNumber);
+    const { accountId, owner, repo } = mustGithubRepo(repoId);
+    return getIssueDetail(accountId, owner, repo, issueNumber);
   });
 
   handle(IpcChannels.ghIssueOpenInBrowser, async (repoId: number, issueNumber: number) => {
-    const repo = mustRepo(repoId);
-    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    await shell.openExternal(`https://github.com/${repo.github_owner}/${repo.github_repo}/issues/${issueNumber}`);
+    const { owner, repo } = mustGithubRepo(repoId);
+    await shell.openExternal(`https://github.com/${owner}/${repo}/issues/${issueNumber}`);
     return true;
   });
 
@@ -450,7 +469,7 @@ export function registerIpcHandlers(deps: Deps): void {
   });
 }
 
-async function openRepoAtPath(repoPath: string): Promise<unknown> {
+async function openRepoAtPath(repoPath: string, accountId: number | null = null): Promise<unknown> {
   if (!(await isGitRepo(repoPath))) {
     throw new Error('Selected folder is not a Git repository');
   }
@@ -464,6 +483,9 @@ async function openRepoAtPath(repoPath: string): Promise<unknown> {
     remote_url: remoteUrl,
     github_owner: gh?.owner ?? null,
     github_repo: gh?.repo ?? null,
+    // Only thread the account binding when explicitly provided (e.g. from clone flow).
+    // Plain folder-open keeps any existing binding intact.
+    ...(accountId != null ? { github_account_id: accountId } : {}),
   });
 }
 
@@ -471,6 +493,19 @@ function mustRepo(id: number): NonNullable<ReturnType<typeof getRepositoryById>>
   const r = getRepositoryById(id);
   if (!r) throw new Error(`Repository ${id} not found`);
   return r;
+}
+
+function mustGithubRepo(id: number): { accountId: number; owner: string; repo: string } {
+  const r = mustRepo(id);
+  if (!r.github_owner || !r.github_repo) {
+    throw new Error('Repository is not connected to GitHub');
+  }
+  if (r.github_account_id == null) {
+    throw new Error(
+      'This repository has no GitHub account bound. Open the account menu in the top bar and assign one.',
+    );
+  }
+  return { accountId: r.github_account_id, owner: r.github_owner, repo: r.github_repo };
 }
 
 function deriveCloneFolderName(remoteUrl: string): string {

@@ -6,10 +6,12 @@ import BranchMenu from './BranchMenu';
 import GithubAuthDialog from './GithubAuthDialog';
 import { cn } from '../utils/cn';
 import { useTheme, type ThemeMode } from '../utils/theme';
+import type { GithubAccount } from '@shared/types';
 
 export default function TopBar() {
   const { state, dispatch, refresh, logActivity, toast, silentFetch } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -17,6 +19,24 @@ export default function TopBar() {
     const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, []);
+
+  const reloadAccounts = async () => {
+    try {
+      const state = await api.ghAuthList();
+      setAccounts(state.accounts);
+    } catch {
+      // ignore — auth list is best-effort
+    }
+  };
+
+  useEffect(() => {
+    void reloadAccounts();
+  }, []);
+
+  const closeAuthDialog = () => {
+    setAuthOpen(false);
+    void reloadAccounts();
+  };
 
   const repo = state.repo;
   const status = state.status;
@@ -171,17 +191,71 @@ export default function TopBar() {
                 status={status}
                 dispatch={dispatch}
               />
-              <button className="btn" onClick={() => setAuthOpen(true)}>
-                GitHub
-              </button>
+              <AccountChip accounts={accounts} onClick={() => setAuthOpen(true)} />
             </>
           )}
+          {!repo && <AccountChip accounts={accounts} onClick={() => setAuthOpen(true)} />}
           <ThemeToggle />
         </div>
       </div>
 
-      {authOpen && <GithubAuthDialog onClose={() => setAuthOpen(false)} />}
+      {authOpen && <GithubAuthDialog onClose={closeAuthDialog} />}
     </>
+  );
+}
+
+function AccountChip({
+  accounts,
+  onClick,
+}: {
+  accounts: GithubAccount[];
+  onClick: () => void;
+}) {
+  if (accounts.length === 0) {
+    return (
+      <button className="btn" onClick={onClick} title="Sign in to GitHub">
+        Sign in
+      </button>
+    );
+  }
+  const visible = accounts.slice(0, 3);
+  const overflow = accounts.length - visible.length;
+  const title =
+    accounts.length === 1
+      ? `Signed in as @${accounts[0].login}`
+      : `${accounts.length} accounts: ${accounts.map((a) => '@' + a.login).join(', ')}`;
+  return (
+    <button
+      className="btn-icon flex items-center gap-1 px-2"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+    >
+      <span className="flex -space-x-1.5">
+        {visible.map((a) =>
+          a.avatarUrl ? (
+            <img
+              key={a.id}
+              src={a.avatarUrl}
+              alt={a.login}
+              className="h-6 w-6 rounded-full border border-border-subtle bg-bg-panel"
+            />
+          ) : (
+            <span
+              key={a.id}
+              className="h-6 w-6 rounded-full border border-border-subtle bg-bg-subtle text-[10px] flex items-center justify-center font-mono"
+            >
+              {a.login.slice(0, 2)}
+            </span>
+          ),
+        )}
+        {overflow > 0 && (
+          <span className="h-6 w-6 rounded-full border border-border-subtle bg-bg-subtle text-[10px] flex items-center justify-center">
+            +{overflow}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 

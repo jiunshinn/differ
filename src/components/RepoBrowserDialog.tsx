@@ -1,70 +1,104 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api';
-import { useApp } from '../state/AppStore';
-import type { GithubOwnerRef, GithubRepoSummary } from '@shared/types';
+import type { GithubAccount, GithubOwnerRef, GithubRepoSummary } from '@shared/types';
 import CloneFromUrlDialog from './CloneFromUrlDialog';
 
 interface Props {
   onClose: () => void;
 }
 
-type Scope = { kind: 'me' } | { kind: 'org'; login: string };
+type Scope =
+  | { kind: 'all' }
+  | { kind: 'account'; accountId: number }
+  | { kind: 'org'; accountId: number; org: string };
+
+function scopeKey(s: Scope): string {
+  if (s.kind === 'all') return '__all__';
+  if (s.kind === 'account') return `acc:${s.accountId}`;
+  return `acc:${s.accountId}:org:${s.org}`;
+}
 
 export default function RepoBrowserDialog({ onClose }: Props) {
-  const { toast } = useApp();
-  const [orgs, setOrgs] = useState<GithubOwnerRef[]>([]);
-  const [scope, setScope] = useState<Scope>({ kind: 'me' });
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
+  const [orgsByAccount, setOrgsByAccount] = useState<Record<number, GithubOwnerRef[]>>({});
+  const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const [reposByScope, setReposByScope] = useState<Record<string, GithubRepoSummary[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [cloneTarget, setCloneTarget] = useState<GithubRepoSummary | null>(null);
-  const [me, setMe] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const status = await api.ghAuthStatus();
-        if (!status.authenticated) {
-          setError('Sign in to GitHub first.');
+        const state = await api.ghAuthList();
+        if (state.accounts.length === 0) {
+          setError('Add a GitHub account first (top-right account menu).');
           return;
         }
-        setMe(status.login);
-        const orgList = await api.ghListMyOrgs();
-        setOrgs(orgList);
+        setAccounts(state.accounts);
       } catch (e) {
         setError((e as Error).message);
       }
     })();
   }, []);
 
-  const scopeKey = scope.kind === 'me' ? '__me__' : `org:${scope.login}`;
+  // Lazily fetch orgs the first time an account scope is selected.
+  useEffect(() => {
+    if (scope.kind === 'all') return;
+    if (orgsByAccount[scope.accountId]) return;
+    void (async () => {
+      try {
+        const list = await api.ghListMyOrgs(scope.accountId);
+        setOrgsByAccount((prev) => ({ ...prev, [scope.accountId]: list }));
+      } catch {
+        // Silent — orgs are optional UI; the account row still works without them.
+      }
+    })();
+  }, [scope, orgsByAccount]);
+
+  const key = scopeKey(scope);
 
   useEffect(() => {
-    if (reposByScope[scopeKey]) return;
+    if (reposByScope[key]) return;
+    if (accounts.length === 0 && scope.kind !== 'all') return;
     setLoading(true);
     setError(null);
     void (async () => {
       try {
-        const repos =
-          scope.kind === 'me' ? await api.ghListMyRepos() : await api.ghListOrgRepos(scope.login);
-        setReposByScope((prev) => ({ ...prev, [scopeKey]: repos }));
+        let repos: GithubRepoSummary[];
+        if (scope.kind === 'all') {
+          repos = await api.ghListAllRepos();
+        } else if (scope.kind === 'account') {
+          // Reuse listAllRepos result if present; else fetch and filter.
+          const all = reposByScope['__all__'] ?? (await api.ghListAllRepos());
+          if (!reposByScope['__all__']) {
+            setReposByScope((prev) => ({ ...prev, __all__: all }));
+          }
+          repos = all.filter((r) => r.accountId === scope.accountId);
+        } else {
+          repos = await api.ghListOrgRepos(scope.accountId, scope.org);
+        }
+        setReposByScope((prev) => ({ ...prev, [key]: repos }));
       } catch (e) {
         setError((e as Error).message);
       } finally {
         setLoading(false);
       }
     })();
-  }, [scopeKey, reposByScope, scope]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, accounts.length]);
 
-  const repos = reposByScope[scopeKey] ?? [];
+  const repos = reposByScope[key] ?? [];
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return repos;
     return repos.filter(
       (r) =>
-        r.fullName.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q),
+        r.fullName.toLowerCase().includes(q) ||
+        r.accountLogin.toLowerCase().includes(q) ||
+        (r.description ?? '').toLowerCase().includes(q),
     );
   }, [repos, filter]);
 
@@ -75,6 +109,7 @@ export default function RepoBrowserDialog({ onClose }: Props) {
         initialUrl={cloneTarget.cloneUrl}
         initialFolderName={cloneTarget.name}
         initialUseAuthToken
+        accountId={cloneTarget.accountId}
         onCloned={() => {
           setCloneTarget(null);
           onClose();
@@ -83,34 +118,64 @@ export default function RepoBrowserDialog({ onClose }: Props) {
     );
   }
 
+  const activeAccountId = scope.kind === 'all' ? null : scope.accountId;
+  const orgsForActive = activeAccountId != null ? orgsByAccount[activeAccountId] ?? [] : [];
+
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[720px] max-h-[80vh] panel-card p-0 shadow-raised flex flex-col">
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[760px] max-h-[80vh] panel-card p-0 shadow-raised flex flex-col">
           <div className="px-4 pt-4 pb-3 border-b border-border">
             <Dialog.Title className="text-base font-semibold tracking-tight mb-2">
               Browse your GitHub repositories
             </Dialog.Title>
             <div className="flex gap-2 items-center flex-wrap">
               <button
-                className={scope.kind === 'me' ? 'chip-selected' : 'chip'}
-                onClick={() => setScope({ kind: 'me' })}
+                className={scope.kind === 'all' ? 'chip-selected' : 'chip'}
+                onClick={() => setScope({ kind: 'all' })}
               >
-                {me ? `@${me}` : 'You'}
+                All accounts
               </button>
-              {orgs.map((o) => (
-                <button
-                  key={o.login}
-                  className={
-                    scope.kind === 'org' && scope.login === o.login ? 'chip-selected' : 'chip'
-                  }
-                  onClick={() => setScope({ kind: 'org', login: o.login })}
-                >
-                  {o.login}
-                </button>
-              ))}
+              {accounts.map((a) => {
+                const selected = scope.kind !== 'all' && scope.accountId === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    className={selected ? 'chip-selected' : 'chip'}
+                    onClick={() => setScope({ kind: 'account', accountId: a.id })}
+                    title={`@${a.login}`}
+                  >
+                    {a.avatarUrl ? (
+                      <img src={a.avatarUrl} alt="" className="inline h-4 w-4 rounded-full mr-1 -ml-0.5 align-text-bottom" />
+                    ) : null}
+                    @{a.login}
+                  </button>
+                );
+              })}
             </div>
+            {scope.kind !== 'all' && orgsForActive.length > 0 && (
+              <div className="mt-2 flex gap-1.5 items-center flex-wrap">
+                <span className="text-xs text-text-muted mr-1">Orgs:</span>
+                <button
+                  className={scope.kind === 'account' ? 'chip-selected' : 'chip'}
+                  onClick={() => setScope({ kind: 'account', accountId: scope.accountId })}
+                >
+                  (none)
+                </button>
+                {orgsForActive.map((o) => (
+                  <button
+                    key={o.login}
+                    className={
+                      scope.kind === 'org' && scope.org === o.login ? 'chip-selected' : 'chip'
+                    }
+                    onClick={() => setScope({ kind: 'org', accountId: scope.accountId, org: o.login })}
+                  >
+                    {o.login}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-3">
               <input
                 className="input"
@@ -130,7 +195,7 @@ export default function RepoBrowserDialog({ onClose }: Props) {
             )}
             <ul className="grid gap-1">
               {filtered.map((r) => (
-                <li key={r.id}>
+                <li key={`${r.accountId}:${r.id}`}>
                   <button
                     className="w-full text-left panel-card px-3 py-2.5 hover:border-accent transition-colors flex items-start gap-3"
                     onClick={() => setCloneTarget(r)}
@@ -138,6 +203,11 @@ export default function RepoBrowserDialog({ onClose }: Props) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold tracking-tight">{r.fullName}</span>
+                        <AccountBadge
+                          login={r.accountLogin}
+                          avatarUrl={r.accountAvatarUrl}
+                          showLabel={accounts.length > 1}
+                        />
                         {r.private && <span className="chip">private</span>}
                         {r.fork && <span className="chip">fork</span>}
                         {r.archived && <span className="chip">archived</span>}
@@ -167,6 +237,28 @@ export default function RepoBrowserDialog({ onClose }: Props) {
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function AccountBadge({
+  login,
+  avatarUrl,
+  showLabel,
+}: {
+  login: string;
+  avatarUrl: string | null;
+  showLabel: boolean;
+}) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 chip"
+      title={`Discovered via @${login}`}
+    >
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" className="h-3.5 w-3.5 rounded-full" />
+      ) : null}
+      {showLabel && <span className="text-[10px]">@{login}</span>}
+    </span>
   );
 }
 

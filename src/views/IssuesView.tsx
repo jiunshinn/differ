@@ -12,7 +12,7 @@ import { api } from '../api';
 import { useApp } from '../state/AppStore';
 import { cn } from '../utils/cn';
 import type {
-  GithubAuthState,
+  GithubAccount,
   GithubIssueDetail,
   GithubIssueLabel,
   GithubIssueStateFilter,
@@ -28,7 +28,7 @@ const FILTERS: { id: GithubIssueStateFilter; label: string }[] = [
 export default function IssuesView() {
   const { state, toast } = useApp();
   const repo = state.repo;
-  const [auth, setAuth] = useState<GithubAuthState | null>(null);
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
   const [issues, setIssues] = useState<GithubIssueSummary[]>([]);
   const [detail, setDetail] = useState<GithubIssueDetail | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
@@ -37,13 +37,22 @@ export default function IssuesView() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const boundAccount = repo?.github_account_id
+    ? accounts.find((a) => a.id === repo.github_account_id) ?? null
+    : null;
+
   const load = useCallback(async () => {
     if (!repo) return;
     setLoading(true);
     try {
-      const nextAuth = await api.ghAuthStatus();
-      setAuth(nextAuth);
-      if (nextAuth.authenticated && repo.github_owner && repo.github_repo) {
+      const authState = await api.ghAuthList();
+      setAccounts(authState.accounts);
+      if (
+        authState.accounts.length > 0 &&
+        repo.github_owner &&
+        repo.github_repo &&
+        repo.github_account_id != null
+      ) {
         const nextIssues = await api.ghIssueList(repo.id, filter);
         setIssues(nextIssues);
         setSelectedNumber((current) =>
@@ -117,6 +126,13 @@ export default function IssuesView() {
               {connectedToGithub
                 ? `${repo.github_owner}/${repo.github_repo}`
                 : 'No GitHub remote detected'}
+              {boundAccount && (
+                <>
+                  {' '}
+                  · <span className="text-text-muted">as</span>{' '}
+                  <span className="text-accent">@{boundAccount.login}</span>
+                </>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -152,10 +168,17 @@ export default function IssuesView() {
               </p>
             </div>
           </div>
-        ) : auth && !auth.authenticated ? (
+        ) : accounts.length === 0 ? (
           <div className="p-6">
             <div className="panel-card p-6 text-sm text-text-secondary">
               Sign in to GitHub from the toolbar (top right) to view issues.
+            </div>
+          </div>
+        ) : repo.github_account_id == null ? (
+          <div className="p-6">
+            <div className="panel-card p-6 text-sm text-text-secondary">
+              This repository isn't bound to any GitHub account. Open the account menu in the top
+              bar to assign one.
             </div>
           </div>
         ) : (

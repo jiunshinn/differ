@@ -12,6 +12,7 @@ import type {
   FileDiff,
   FileReviewState,
   FileReviewStatus,
+  GithubAccount,
   GithubAuthState,
   GithubCheckRun,
   GithubDeviceCode,
@@ -121,16 +122,19 @@ export interface DifferApi {
   }) => Promise<unknown>;
   copyContext: (markdown: string) => Promise<boolean>;
 
-  ghAuthStatus: () => Promise<GithubAuthState>;
-  ghAuthSetToken: (token: string) => Promise<GithubAuthState>;
-  ghAuthClear: () => Promise<GithubAuthState>;
+  ghAuthList: () => Promise<GithubAuthState>;
+  ghAuthAddToken: (token: string) => Promise<GithubAccount>;
+  ghAuthRemove: (accountId: number) => Promise<GithubAuthState>;
+  ghAuthListReposForAccount: (accountId: number) => Promise<Repository[]>;
+  ghAuthRebindRepos: (fromAccountId: number, toAccountId: number | null) => Promise<number>;
+  ghAuthSetRepoAccount: (repoId: number, accountId: number | null) => Promise<Repository | null>;
   ghOauthConfig: () => Promise<GithubOAuthConfig>;
   ghOauthStart: () => Promise<GithubDeviceCode>;
   ghOauthPoll: () => Promise<GithubOAuthPollResult>;
   ghOauthCancel: () => Promise<boolean>;
-  ghListMyRepos: () => Promise<GithubRepoSummary[]>;
-  ghListMyOrgs: () => Promise<GithubOwnerRef[]>;
-  ghListOrgRepos: (org: string) => Promise<GithubRepoSummary[]>;
+  ghListAllRepos: () => Promise<GithubRepoSummary[]>;
+  ghListMyOrgs: (accountId: number) => Promise<GithubOwnerRef[]>;
+  ghListOrgRepos: (accountId: number, org: string) => Promise<GithubRepoSummary[]>;
   ghPrList: (repoId: number, state?: GithubPullRequestStateFilter) => Promise<GithubPullRequestSummary[]>;
   ghPrDetail: (repoId: number, prNumber: number) => Promise<GithubPullRequestDetail>;
   ghPrCheckout: (repoId: number, prNumber: number) => Promise<ReviewSession>;

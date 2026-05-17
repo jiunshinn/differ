@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import type {
-  GithubAuthState,
+  GithubAccount,
   GithubPullRequestState,
   GithubPullRequestStateFilter,
   GithubPullRequestSummary,
@@ -20,20 +20,28 @@ const FILTERS: { id: GithubPullRequestStateFilter; label: string }[] = [
 export default function PullRequestsView() {
   const { state, dispatch, toast } = useApp();
   const [prs, setPrs] = useState<GithubPullRequestSummary[]>([]);
-  const [auth, setAuth] = useState<GithubAuthState | null>(null);
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState<number | null>(null);
   const [filter, setFilter] = useState<GithubPullRequestStateFilter>('open');
 
   const repo = state.repo;
+  const boundAccount = repo?.github_account_id
+    ? accounts.find((a) => a.id === repo.github_account_id) ?? null
+    : null;
 
   const load = useCallback(async () => {
     if (!repo) return;
     setLoading(true);
     try {
-      const a = await api.ghAuthStatus();
-      setAuth(a);
-      if (a.authenticated && repo.github_owner && repo.github_repo) {
+      const authState = await api.ghAuthList();
+      setAccounts(authState.accounts);
+      if (
+        authState.accounts.length > 0 &&
+        repo.github_owner &&
+        repo.github_repo &&
+        repo.github_account_id != null
+      ) {
         const list = await api.ghPrList(repo.id, filter);
         setPrs(list);
       } else {
@@ -77,6 +85,13 @@ export default function PullRequestsView() {
               {repo.github_owner && repo.github_repo
                 ? `${repo.github_owner}/${repo.github_repo}`
                 : 'No GitHub remote detected'}
+              {boundAccount && (
+                <>
+                  {' '}
+                  · <span className="text-text-muted">as</span>{' '}
+                  <span className="text-accent">@{boundAccount.login}</span>
+                </>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -109,9 +124,14 @@ export default function PullRequestsView() {
               (Looked for an origin URL like git@github.com:owner/repo or https://github.com/owner/repo.)
             </p>
           </div>
-        ) : auth && !auth.authenticated ? (
+        ) : accounts.length === 0 ? (
           <div className="panel-card p-6 text-sm text-text-secondary">
             Sign in to GitHub from the toolbar (top right) to view pull requests.
+          </div>
+        ) : repo.github_account_id == null ? (
+          <div className="panel-card p-6 text-sm text-text-secondary">
+            This repository isn't bound to any GitHub account. Open the account menu in the top
+            bar to assign one.
           </div>
         ) : (
           <div className="panel-card overflow-hidden">

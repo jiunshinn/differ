@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
-import type { Repository } from '@shared/types';
+import type { GithubAccount, Repository } from '@shared/types';
 
 interface Props {
   onClose: () => void;
   initialUrl?: string;
   initialFolderName?: string;
   initialUseAuthToken?: boolean;
+  // When set (e.g. from the repo browser), the clone uses this account's token and
+  // binds the cloned repo to it. The picker is hidden.
+  accountId?: number;
   onCloned?: (repo: Repository) => void;
 }
 
@@ -24,6 +27,7 @@ export default function CloneFromUrlDialog({
   initialUrl = '',
   initialFolderName,
   initialUseAuthToken = true,
+  accountId,
   onCloned,
 }: Props) {
   const { dispatch, toast, refresh } = useApp();
@@ -31,12 +35,19 @@ export default function CloneFromUrlDialog({
   const [parentDir, setParentDir] = useState<string | null>(null);
   const [folderName, setFolderName] = useState(initialFolderName ?? deriveFolderName(initialUrl));
   const [useToken, setUseToken] = useState(initialUseAuthToken);
-  const [authed, setAuthed] = useState(false);
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
+  const [pickedAccountId, setPickedAccountId] = useState<number | null>(accountId ?? null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void api.ghAuthStatus().then((s) => setAuthed(s.authenticated));
-  }, []);
+    void api.ghAuthList().then((s) => {
+      setAccounts(s.accounts);
+      // If the caller didn't specify and there's only one account, default to it.
+      if (accountId == null && s.accounts.length === 1) {
+        setPickedAccountId(s.accounts[0].id);
+      }
+    });
+  }, [accountId]);
 
   // Re-derive folder name when URL changes — but only if the user hasn't customized it.
   const userEditedFolder = React.useRef(false);
@@ -65,13 +76,15 @@ export default function CloneFromUrlDialog({
       toast('error', 'Could not determine a folder name');
       return;
     }
+    const willUseToken = useToken && pickedAccountId != null;
     setBusy(true);
     try {
       const repo = await api.cloneRepo({
         remoteUrl: url.trim(),
         parentDir,
         folderName: name,
-        useAuthToken: useToken && authed,
+        useAuthToken: willUseToken,
+        accountId: pickedAccountId ?? undefined,
       });
       toast('success', `Cloned ${repo.name}`);
       if (onCloned) {
@@ -89,6 +102,11 @@ export default function CloneFromUrlDialog({
       setBusy(false);
     }
   };
+
+  const accountFixed = accountId != null;
+  const fixedAccount = accountFixed ? accounts.find((a) => a.id === accountId) ?? null : null;
+  const showAccountPicker =
+    !accountFixed && accounts.length > 0 && /^https?:\/\/github\.com\//i.test(url);
 
   return (
     <Dialog.Root open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -141,14 +159,41 @@ export default function CloneFromUrlDialog({
               )}
             </label>
 
-            {authed && /^https?:\/\/github\.com\//i.test(url) && (
+            {accountFixed && fixedAccount && (
+              <div className="text-xs text-text-muted">
+                Cloning with{' '}
+                <span className="text-accent">@{fixedAccount.login}</span>'s credentials.
+              </div>
+            )}
+
+            {showAccountPicker && (
+              <label className="block">
+                <div className="section-label mb-1">Authenticate as</div>
+                <select
+                  className="input"
+                  value={pickedAccountId == null ? '' : String(pickedAccountId)}
+                  onChange={(e) =>
+                    setPickedAccountId(e.target.value ? Number(e.target.value) : null)
+                  }
+                >
+                  <option value="">No auth (public repos only)</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      @{a.login}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {!accountFixed && pickedAccountId != null && /^https?:\/\/github\.com\//i.test(url) && (
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={useToken}
                   onChange={(e) => setUseToken(e.target.checked)}
                 />
-                Use my GitHub credentials for this clone
+                Use the selected account's credentials for this clone
               </label>
             )}
 

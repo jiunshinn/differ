@@ -73,16 +73,23 @@ const api = {
   copyContext: (markdown: string) => invoke(IpcChannels.contextCopy, markdown),
 
   // GitHub
-  ghAuthStatus: () => invoke(IpcChannels.ghAuthStatus),
-  ghAuthSetToken: (token: string) => invoke(IpcChannels.ghAuthSetToken, token),
-  ghAuthClear: () => invoke(IpcChannels.ghAuthClear),
+  ghAuthList: () => invoke(IpcChannels.ghAuthList),
+  ghAuthAddToken: (token: string) => invoke(IpcChannels.ghAuthAddToken, token),
+  ghAuthRemove: (accountId: number) => invoke(IpcChannels.ghAuthRemove, accountId),
+  ghAuthListReposForAccount: (accountId: number) =>
+    invoke(IpcChannels.ghAuthListReposForAccount, accountId),
+  ghAuthRebindRepos: (fromAccountId: number, toAccountId: number | null) =>
+    invoke(IpcChannels.ghAuthRebindRepos, fromAccountId, toAccountId),
+  ghAuthSetRepoAccount: (repoId: number, accountId: number | null) =>
+    invoke(IpcChannels.ghAuthSetRepoAccount, repoId, accountId),
   ghOauthConfig: () => invoke(IpcChannels.ghOauthConfig),
   ghOauthStart: () => invoke(IpcChannels.ghOauthStart),
   ghOauthPoll: () => invoke(IpcChannels.ghOauthPoll),
   ghOauthCancel: () => invoke(IpcChannels.ghOauthCancel),
-  ghListMyRepos: () => invoke(IpcChannels.ghListMyRepos),
-  ghListMyOrgs: () => invoke(IpcChannels.ghListMyOrgs),
-  ghListOrgRepos: (org: string) => invoke(IpcChannels.ghListOrgRepos, org),
+  ghListAllRepos: () => invoke(IpcChannels.ghListAllRepos),
+  ghListMyOrgs: (accountId: number) => invoke(IpcChannels.ghListMyOrgs, accountId),
+  ghListOrgRepos: (accountId: number, org: string) =>
+    invoke(IpcChannels.ghListOrgRepos, accountId, org),
   ghPrList: (repoId: number, state?: string) => invoke(IpcChannels.ghPrList, repoId, state),
   ghPrDetail: (repoId: number, prNumber: number) => invoke(IpcChannels.ghPrDetail, repoId, prNumber),
   ghPrCheckout: (repoId: number, prNumber: number) => invoke(IpcChannels.ghPrCheckout, repoId, prNumber),

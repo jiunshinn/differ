@@ -1,10 +1,9 @@
 import type {
-  GithubAuthState,
   GithubDeviceCode,
   GithubOAuthConfig,
   GithubOAuthPollResult,
 } from '../../shared/types';
-import { getAuthStatus, setToken } from './githubService';
+import { addAccount } from './githubService';
 
 // OAuth Device Flow against github.com. The client_id is loaded from the
 // DIFFER_GITHUB_OAUTH_CLIENT_ID environment variable at runtime (main process).
@@ -144,10 +143,12 @@ export async function pollDeviceFlow(): Promise<GithubOAuthPollResult> {
   };
   if (data.access_token) {
     activeFlow = null;
-    const auth: GithubAuthState = await setToken(data.access_token);
-    // Force re-fetch with the new token to populate login + scopes.
-    const fresh = await getAuthStatus(true);
-    return { status: 'authorized', auth: fresh.authenticated ? fresh : auth };
+    try {
+      const account = await addAccount(data.access_token);
+      return { status: 'authorized', account };
+    } catch (e) {
+      return { status: 'error', error: (e as Error).message };
+    }
   }
   switch (data.error) {
     case 'authorization_pending':

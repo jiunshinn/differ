@@ -102,10 +102,22 @@ function applyMigrations(d: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS github_accounts (
+      id INTEGER PRIMARY KEY,
+      login TEXT NOT NULL,
+      avatar_url TEXT,
+      scopes TEXT NOT NULL DEFAULT '',
+      token_encrypted TEXT,
+      token_plain TEXT,
+      added_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   ensureColumn(d, 'repositories', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'repositories', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(d, 'repositories', 'github_account_id', 'INTEGER');
   // Seed sort_order for existing rows so they keep a stable order matching last_opened_at.
   const seeded = d
     .prepare(`SELECT COUNT(*) AS n FROM repositories WHERE sort_order != 0`)

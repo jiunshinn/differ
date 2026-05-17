@@ -19,8 +19,8 @@ export default function RepositoryPicker() {
     setRecent(list);
   };
   const loadAuth = async () => {
-    const s = await api.ghAuthStatus();
-    setAuthed(s.authenticated);
+    const s = await api.ghAuthList();
+    setAuthed(s.accounts.length > 0);
   };
   useEffect(() => {
     void load();

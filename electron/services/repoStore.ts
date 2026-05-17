@@ -10,6 +10,8 @@ export function upsertRepository(
     remote_url: string | null;
     github_owner: string | null;
     github_repo: string | null;
+    // When provided, write the binding. When undefined, preserve any existing binding on update.
+    github_account_id?: number | null;
   },
 ): Repository {
   const db = getDb();
@@ -17,18 +19,35 @@ export function upsertRepository(
     | Repository
     | undefined;
   if (existing) {
-    db.prepare(
-      `UPDATE repositories
-         SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?, last_opened_at = datetime('now')
-         WHERE id = ?`,
-    ).run(
-      fields.name,
-      fields.default_branch,
-      fields.remote_url,
-      fields.github_owner,
-      fields.github_repo,
-      existing.id,
-    );
+    if (fields.github_account_id !== undefined) {
+      db.prepare(
+        `UPDATE repositories
+           SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?,
+               github_account_id = ?, last_opened_at = datetime('now')
+           WHERE id = ?`,
+      ).run(
+        fields.name,
+        fields.default_branch,
+        fields.remote_url,
+        fields.github_owner,
+        fields.github_repo,
+        fields.github_account_id,
+        existing.id,
+      );
+    } else {
+      db.prepare(
+        `UPDATE repositories
+           SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?, last_opened_at = datetime('now')
+           WHERE id = ?`,
+      ).run(
+        fields.name,
+        fields.default_branch,
+        fields.remote_url,
+        fields.github_owner,
+        fields.github_repo,
+        existing.id,
+      );
+    }
     return db.prepare(`SELECT * FROM repositories WHERE id = ?`).get(existing.id) as Repository;
   }
   const max = db.prepare(`SELECT COALESCE(MAX(sort_order), 0) AS m FROM repositories`).get() as {
@@ -36,8 +55,8 @@ export function upsertRepository(
   };
   const result = db
     .prepare(
-      `INSERT INTO repositories (path, name, default_branch, remote_url, github_owner, github_repo, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO repositories (path, name, default_branch, remote_url, github_owner, github_repo, github_account_id, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       repoPath,
@@ -46,6 +65,7 @@ export function upsertRepository(
       fields.remote_url,
       fields.github_owner,
       fields.github_repo,
+      fields.github_account_id ?? null,
       max.m + 1,
     );
   return db.prepare(`SELECT * FROM repositories WHERE id = ?`).get(result.lastInsertRowid) as Repository;

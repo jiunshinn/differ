@@ -8,6 +8,7 @@ export interface Repository {
   remote_url: string | null;
   github_owner: string | null;
   github_repo: string | null;
+  github_account_id: number | null;
   created_at: string;
   last_opened_at: string;
   pinned: number;
@@ -189,6 +190,7 @@ export interface GithubPullRequestSummary {
   url: string;
   updatedAt: string;
   reviewDecision: string | null;
+  accountId: number;
 }
 
 export interface GithubPullRequestDetail extends GithubPullRequestSummary {
@@ -225,6 +227,7 @@ export interface GithubIssueSummary {
   updatedAt: string;
   closedAt: string | null;
   commentsCount: number;
+  accountId: number;
 }
 
 export interface GithubIssueComment {
@@ -310,10 +313,16 @@ export interface ContextExtractionResult {
 
 // Auth
 
-export interface GithubAuthState {
-  authenticated: boolean;
-  login: string | null;
+export interface GithubAccount {
+  id: number;
+  login: string;
+  avatarUrl: string | null;
   scopes: string[];
+  addedAt: string;
+}
+
+export interface GithubAuthState {
+  accounts: GithubAccount[];
 }
 
 export interface GithubOAuthConfig {
@@ -340,7 +349,7 @@ export type GithubOAuthPollStatus =
 
 export interface GithubOAuthPollResult {
   status: GithubOAuthPollStatus;
-  auth?: GithubAuthState;
+  account?: GithubAccount;
   error?: string;
   nextIntervalSeconds?: number;
 }
@@ -368,6 +377,9 @@ export interface GithubRepoSummary {
   htmlUrl: string;
   stargazersCount: number;
   updatedAt: string;
+  accountId: number;
+  accountLogin: string;
+  accountAvatarUrl: string | null;
 }
 
 // Clone
@@ -377,6 +389,9 @@ export interface CloneRequest {
   parentDir: string;
   folderName?: string; // defaults to repo slug derived from URL
   useAuthToken?: boolean; // attach the stored GitHub token for HTTPS github.com URLs
+  // The account that discovered/owns this repo. When set, its token is used
+  // for the clone, and the cloned row is bound to this account.
+  accountId?: number;
 }
 
 // IPC channels (used as a const map so renderer + main stay in sync)
@@ -439,9 +454,12 @@ export const IpcChannels = {
   contextCopy: 'context:copy',
 
   // GitHub
-  ghAuthStatus: 'gh:authStatus',
-  ghAuthSetToken: 'gh:authSetToken',
-  ghAuthClear: 'gh:authClear',
+  ghAuthList: 'gh:authList',
+  ghAuthAddToken: 'gh:authAddToken',
+  ghAuthRemove: 'gh:authRemove',
+  ghAuthListReposForAccount: 'gh:authListReposForAccount',
+  ghAuthRebindRepos: 'gh:authRebindRepos',
+  ghAuthSetRepoAccount: 'gh:authSetRepoAccount',
   ghPrList: 'gh:prList',
   ghPrDetail: 'gh:prDetail',
   ghPrCheckout: 'gh:prCheckout',
@@ -455,7 +473,7 @@ export const IpcChannels = {
   ghOauthStart: 'gh:oauthStart',
   ghOauthPoll: 'gh:oauthPoll',
   ghOauthCancel: 'gh:oauthCancel',
-  ghListMyRepos: 'gh:listMyRepos',
+  ghListAllRepos: 'gh:listAllRepos',
   ghListMyOrgs: 'gh:listMyOrgs',
   ghListOrgRepos: 'gh:listOrgRepos',
 
