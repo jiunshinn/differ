@@ -32,9 +32,11 @@ npm start
 
 ## Features (MVP)
 
-- Repository picker with recent repos.
-- Local Changes view: changed files grouped by staged / unstaged / untracked / conflicted, unified or split diff, hunk navigation, whitespace toggle, file reviewed state.
+- Repository picker with recent repos, plus a left project sidebar with pin-to-top, drag-and-drop reorder, and collapse.
+- Local Changes view: changed files grouped by staged / unstaged / untracked / conflicted, unified or split diff, hunk navigation, whitespace toggle, file reviewed state. Resizable panes, fullscreen diff with `j`/`k` file navigation.
+- History view with three tabs: **Graph** (commit list with filter and HEAD marker), **Resolve** (merge-conflict queue with three-way preview scaffold), and **Sync** (staged-files summary, push checklist, fetch/pull/push).
 - Local comments at file / hunk / line scope, with labels (issue, question, refactor, test, ask-ai), resolved/open status, filtering.
 - AI context builder: select comments, hunks, files, type a task + test command, preview Markdown, copy to clipboard, save bundle.
 - Local Git: stage/unstage files and hunks, commit, amend, branch create/checkout, fetch/pull/push.
 - GitHub: personal-access-token auth, open PR list, checkout PR locally, review PR diff, draft line comments and submit a review (Comment / Approve / Request changes).
+- Native window header, system / light / dark theme toggle.
