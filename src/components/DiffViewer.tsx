@@ -488,8 +488,7 @@ function SideCell({
 }) {
   if (!line) {
     return (
-      <div className="diff-line context">
-        <div className="gut" />
+      <div className="diff-line split empty">
         <div className="gut" />
         <div className="body" />
       </div>
@@ -509,13 +508,12 @@ function SideCell({
   return (
     <>
       <div
-        className={cn('diff-line group', cls, inlineComments.length && 'has-comment')}
+        className={cn('diff-line split group', cls, inlineComments.length && 'has-comment')}
         onDoubleClick={() => {
           if (lineNumber != null) onAddLineComment(side, lineNumber);
         }}
       >
         <div className="gut">{lineNumber ?? ''}</div>
-        <div className="gut" />
         <div className="body relative">
           {line.content}
           {lineNumber != null && (

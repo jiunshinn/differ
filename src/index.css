@@ -157,6 +157,29 @@ input, textarea, [contenteditable='true'] {
   color: #2F6FEB;
 }
 
+/* Split (side-by-side) mode: single gutter per pane, no inline +/- prefix. */
+.diff-line.split {
+  grid-template-columns: 52px 1fr;
+}
+.diff-line.split.add .body::before,
+.diff-line.split.del .body::before,
+.diff-line.split.context .body::before {
+  content: none;
+  margin-right: 0;
+}
+.diff-line.split.empty {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(17, 17, 17, 0.025),
+    rgba(17, 17, 17, 0.025) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+.diff-line.split.empty .gut {
+  background: transparent;
+}
+
 .hunk-header {
   background: #FAFAFA;
   color: #6B6B6B;

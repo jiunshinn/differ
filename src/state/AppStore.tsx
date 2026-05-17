@@ -88,7 +88,7 @@ const initial: AppState = {
   status: null,
   selectedFile: null,
   files: [],
-  diffMode: 'unified',
+  diffMode: 'split',
   diffStaged: false,
   ignoreWhitespace: false,
   diffsByFile: {},
