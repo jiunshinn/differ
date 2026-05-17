@@ -4,8 +4,10 @@ import { getSetting, setSetting, deleteSetting } from './db';
 import type {
   GithubAuthState,
   GithubCheckRun,
+  GithubOwnerRef,
   GithubPullRequestDetail,
   GithubPullRequestSummary,
+  GithubRepoSummary,
   GithubSubmitReviewInput,
 } from '../../shared/types';
 
@@ -178,4 +180,79 @@ function mustClient(): Octokit {
   const c = getOctokit();
   if (!c) throw new Error('GitHub is not authenticated. Add a personal access token in Settings.');
   return c;
+}
+
+export function getStoredToken(): string | null {
+  return loadStoredToken();
+}
+
+interface OctokitRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: { login: string } | null;
+  private: boolean;
+  fork: boolean;
+  archived?: boolean;
+  description: string | null;
+  default_branch?: string;
+  clone_url?: string;
+  ssh_url?: string;
+  html_url: string;
+  stargazers_count?: number;
+  updated_at: string | null;
+}
+
+function mapRepo(r: OctokitRepo): GithubRepoSummary {
+  return {
+    id: r.id,
+    name: r.name,
+    fullName: r.full_name,
+    ownerLogin: r.owner?.login ?? r.full_name.split('/')[0] ?? '',
+    private: r.private,
+    fork: r.fork,
+    archived: !!r.archived,
+    description: r.description,
+    defaultBranch: r.default_branch ?? null,
+    cloneUrl: r.clone_url ?? `https://github.com/${r.full_name}.git`,
+    sshUrl: r.ssh_url ?? `git@github.com:${r.full_name}.git`,
+    htmlUrl: r.html_url,
+    stargazersCount: r.stargazers_count ?? 0,
+    updatedAt: r.updated_at ?? '',
+  };
+}
+
+export async function listMyRepos(): Promise<GithubRepoSummary[]> {
+  const client = mustClient();
+  const data = await client.paginate(client.repos.listForAuthenticatedUser, {
+    per_page: 100,
+    sort: 'updated',
+    direction: 'desc',
+    affiliation: 'owner,collaborator,organization_member',
+  });
+  return (data as OctokitRepo[]).map(mapRepo);
+}
+
+export async function listMyOrgs(): Promise<GithubOwnerRef[]> {
+  const client = mustClient();
+  const orgs = (await client.paginate(client.orgs.listForAuthenticatedUser, {
+    per_page: 100,
+  })) as { login: string; avatar_url: string | null }[];
+  return orgs.map((o) => ({
+    login: o.login,
+    kind: 'org',
+    avatarUrl: o.avatar_url ?? null,
+  }));
+}
+
+export async function listOrgRepos(org: string): Promise<GithubRepoSummary[]> {
+  const client = mustClient();
+  const data = await client.paginate(client.repos.listForOrg, {
+    org,
+    per_page: 100,
+    sort: 'updated',
+    direction: 'desc',
+    type: 'all',
+  });
+  return (data as OctokitRepo[]).map(mapRepo);
 }

@@ -1,5 +1,12 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron';
 import path from 'node:path';
+import dotenv from 'dotenv';
+
+// Load env from .env in the project root (dev) and from the resources dir (packaged).
+// Done before any other imports that may read process.env.
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron';
 import { initDatabase, closeDatabase } from './services/db';
 import { registerIpcHandlers } from './ipc';
 

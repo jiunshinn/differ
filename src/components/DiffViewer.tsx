@@ -17,7 +17,6 @@ export default function DiffViewer() {
   }>(null);
 
   const selected = state.selectedFile;
-  const diff = selected ? state.diffsByFile[selected] : null;
 
   if (!selected) {
     return (
@@ -26,13 +25,26 @@ export default function DiffViewer() {
       </div>
     );
   }
-  if (!diff) {
+  const diffEntry = state.diffsByFile[selected];
+  if (diffEntry === undefined) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
         Loading diff…
       </div>
     );
   }
+  if (diffEntry === null) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-1 text-text-muted text-sm px-6 text-center">
+        <p className="font-medium text-text-primary">No changes to show</p>
+        <p className="font-mono text-xs truncate max-w-full">{selected}</p>
+        <p className="text-xs">
+          This file matches {state.diffStaged ? 'the index' : 'HEAD'} — nothing to diff.
+        </p>
+      </div>
+    );
+  }
+  const diff = diffEntry;
 
   const fileComments = state.comments.filter((c) => c.file_path === selected);
   const openComments = fileComments.filter((c) => c.status === 'open').length;

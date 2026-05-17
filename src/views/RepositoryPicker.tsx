@@ -2,17 +2,29 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
 import type { Repository } from '@shared/types';
+import GithubAuthDialog from '../components/GithubAuthDialog';
+import CloneFromUrlDialog from '../components/CloneFromUrlDialog';
+import RepoBrowserDialog from '../components/RepoBrowserDialog';
 
 export default function RepositoryPicker() {
   const { dispatch, toast, refresh } = useApp();
   const [recent, setRecent] = useState<Repository[]>([]);
+  const [authed, setAuthed] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showClone, setShowClone] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
 
   const load = async () => {
     const list = await api.recentRepos();
     setRecent(list);
   };
+  const loadAuth = async () => {
+    const s = await api.ghAuthStatus();
+    setAuthed(s.authenticated);
+  };
   useEffect(() => {
     void load();
+    void loadAuth();
   }, []);
 
   const open = async (repo: Repository) => {
@@ -41,6 +53,14 @@ export default function RepositoryPicker() {
     }
   };
 
+  const onBrowseClick = () => {
+    if (!authed) {
+      setShowAuth(true);
+      return;
+    }
+    setShowBrowser(true);
+  };
+
   const remove = async (id: number) => {
     await api.removeRecent(id);
     await load();
@@ -55,9 +75,15 @@ export default function RepositoryPicker() {
             Differ is a local-first diff review surface for AI-native Git workflows. Open a Git repo to start reviewing.
           </p>
         </div>
-        <div className="flex gap-2 mb-8">
+        <div className="flex gap-2 mb-8 flex-wrap">
           <button className="btn-primary h-10 px-4" onClick={() => void pick()}>
             Open local repository…
+          </button>
+          <button className="btn h-10 px-4" onClick={() => setShowClone(true)}>
+            Clone from URL…
+          </button>
+          <button className="btn h-10 px-4" onClick={onBrowseClick}>
+            {authed ? 'Browse your GitHub repos…' : 'Sign in with GitHub'}
           </button>
         </div>
         <div>
@@ -90,6 +116,17 @@ export default function RepositoryPicker() {
           </ul>
         </div>
       </div>
+
+      {showAuth && (
+        <GithubAuthDialog
+          onClose={() => {
+            setShowAuth(false);
+            void loadAuth();
+          }}
+        />
+      )}
+      {showClone && <CloneFromUrlDialog onClose={() => setShowClone(false)} />}
+      {showBrowser && <RepoBrowserDialog onClose={() => setShowBrowser(false)} />}
     </div>
   );
 }

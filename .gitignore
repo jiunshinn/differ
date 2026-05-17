@@ -5,4 +5,8 @@ dist/
 *.sqlite3
 .vite/
 out/
+
+# Local env (use .env.example as the template)
 .env
+.env.local
+.env.*.local

@@ -271,6 +271,69 @@ export interface GithubAuthState {
   scopes: string[];
 }
 
+export interface GithubOAuthConfig {
+  configured: boolean;
+  clientIdPresent: boolean;
+  scopes: string[];
+}
+
+export interface GithubDeviceCode {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export type GithubOAuthPollStatus =
+  | 'pending'
+  | 'slow_down'
+  | 'authorized'
+  | 'expired'
+  | 'denied'
+  | 'error';
+
+export interface GithubOAuthPollResult {
+  status: GithubOAuthPollStatus;
+  auth?: GithubAuthState;
+  error?: string;
+  nextIntervalSeconds?: number;
+}
+
+// GitHub repo listing (for the in-app browser)
+
+export interface GithubOwnerRef {
+  login: string;
+  kind: 'user' | 'org';
+  avatarUrl: string | null;
+}
+
+export interface GithubRepoSummary {
+  id: number;
+  name: string;
+  fullName: string; // owner/name
+  ownerLogin: string;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  description: string | null;
+  defaultBranch: string | null;
+  cloneUrl: string; // https
+  sshUrl: string;
+  htmlUrl: string;
+  stargazersCount: number;
+  updatedAt: string;
+}
+
+// Clone
+
+export interface CloneRequest {
+  remoteUrl: string;
+  parentDir: string;
+  folderName?: string; // defaults to repo slug derived from URL
+  useAuthToken?: boolean; // attach the stored GitHub token for HTTPS github.com URLs
+}
+
 // IPC channels (used as a const map so renderer + main stay in sync)
 
 export const IpcChannels = {
@@ -302,6 +365,8 @@ export const IpcChannels = {
   repoAmend: 'repo:amend',
   repoListTree: 'repo:listTree',
   repoReadFile: 'repo:readFile',
+  repoClone: 'repo:clone',
+  repoPickDirectory: 'repo:pickDirectory',
 
   // Diff
   diffFile: 'diff:file',
@@ -338,6 +403,13 @@ export const IpcChannels = {
   ghPrSubmitReview: 'gh:prSubmitReview',
   ghPrOpenInBrowser: 'gh:prOpenInBrowser',
   ghPrChecks: 'gh:prChecks',
+  ghOauthConfig: 'gh:oauthConfig',
+  ghOauthStart: 'gh:oauthStart',
+  ghOauthPoll: 'gh:oauthPoll',
+  ghOauthCancel: 'gh:oauthCancel',
+  ghListMyRepos: 'gh:listMyRepos',
+  ghListMyOrgs: 'gh:listMyOrgs',
+  ghListOrgRepos: 'gh:listOrgRepos',
 
   // System
   clipboardWrite: 'system:clipboardWrite',

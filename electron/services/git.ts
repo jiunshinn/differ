@@ -69,6 +69,32 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
   });
 }
 
+export async function clone(
+  remoteUrl: string,
+  destDir: string,
+  opts: { authToken?: string | null } = {},
+): Promise<string> {
+  if (!remoteUrl.trim()) throw new Error('Remote URL is required');
+  if (!destDir.trim()) throw new Error('Destination directory is required');
+  if (fs.existsSync(destDir) && fs.readdirSync(destDir).length > 0) {
+    throw new Error(`Destination already exists and is not empty: ${destDir}`);
+  }
+  const parent = path.dirname(destDir);
+  if (!fs.existsSync(parent)) {
+    throw new Error(`Parent directory does not exist: ${parent}`);
+  }
+  // For HTTPS github.com URLs, inject the OAuth token via -c http.extraHeader so it
+  // is not persisted into the cloned repository's .git/config.
+  const args: string[] = [];
+  if (opts.authToken && /^https?:\/\/github\.com\//i.test(remoteUrl)) {
+    const basic = Buffer.from(`x-access-token:${opts.authToken}`).toString('base64');
+    args.push('-c', `http.https://github.com/.extraheader=Authorization: Basic ${basic}`);
+  }
+  args.push('clone', '--progress', '--', remoteUrl, destDir);
+  await runGit(args, { cwd: parent });
+  return destDir;
+}
+
 export async function isGitRepo(dir: string): Promise<boolean> {
   if (!fs.existsSync(dir)) return false;
   try {

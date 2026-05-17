@@ -1,8 +1,11 @@
 import type { IpcMain, Dialog, Shell, Clipboard, BrowserWindow } from 'electron';
 import { IpcChannels } from '../shared/types';
+import path from 'node:path';
+import fs from 'node:fs';
 import {
   amend,
   checkout,
+  clone as gitClone,
   commit as gitCommit,
   createBranch,
   discardFile,
@@ -50,12 +53,23 @@ import {
   clearAuth,
   getAuthStatus,
   getPullRequestDetail,
+  getStoredToken,
   listCheckRuns,
+  listMyOrgs,
+  listMyRepos,
+  listOrgRepos,
   listPullRequests,
   setToken,
   submitReview,
 } from './services/githubService';
+import {
+  cancelDeviceFlow,
+  getOAuthConfig,
+  pollDeviceFlow,
+  startDeviceFlow,
+} from './services/githubOAuth';
 import type {
+  CloneRequest,
   ContextExtractionInput,
   GithubSubmitReviewInput,
 } from '../shared/types';
@@ -85,6 +99,31 @@ export function registerIpcHandlers(deps: Deps): void {
   });
 
   handle(IpcChannels.repoOpen, async (repoPath: string) => openRepoAtPath(repoPath));
+
+  handle(IpcChannels.repoPickDirectory, async (title?: string) => {
+    const win = getWindow();
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: title ?? 'Choose a folder',
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+
+  handle(IpcChannels.repoClone, async (req: CloneRequest) => {
+    if (!req || !req.remoteUrl || !req.parentDir) {
+      throw new Error('Remote URL and parent directory are required');
+    }
+    if (!fs.existsSync(req.parentDir)) {
+      throw new Error(`Parent directory does not exist: ${req.parentDir}`);
+    }
+    const folder = (req.folderName && req.folderName.trim()) || deriveCloneFolderName(req.remoteUrl);
+    if (!folder) throw new Error('Could not derive a target folder name from the URL');
+    const dest = path.join(req.parentDir, folder);
+    const authToken = req.useAuthToken ? getStoredToken() : null;
+    const cloned = await gitClone(req.remoteUrl, dest, { authToken });
+    return openRepoAtPath(cloned);
+  });
 
   handle(IpcChannels.repoRecent, async () => listRecentRepositories());
   handle(IpcChannels.repoRemove, async (id: number) => {
@@ -319,6 +358,18 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IpcChannels.ghAuthSetToken, async (token: string) => setToken(token));
   handle(IpcChannels.ghAuthClear, async () => clearAuth());
 
+  handle(IpcChannels.ghOauthConfig, async () => getOAuthConfig());
+  handle(IpcChannels.ghOauthStart, async () => startDeviceFlow());
+  handle(IpcChannels.ghOauthPoll, async () => pollDeviceFlow());
+  handle(IpcChannels.ghOauthCancel, async () => {
+    cancelDeviceFlow();
+    return true;
+  });
+
+  handle(IpcChannels.ghListMyRepos, async () => listMyRepos());
+  handle(IpcChannels.ghListMyOrgs, async () => listMyOrgs());
+  handle(IpcChannels.ghListOrgRepos, async (org: string) => listOrgRepos(org));
+
   handle(IpcChannels.ghPrList, async (repoId: number) => {
     const repo = mustRepo(repoId);
     if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
@@ -397,4 +448,13 @@ function mustRepo(id: number): NonNullable<ReturnType<typeof getRepositoryById>>
   const r = getRepositoryById(id);
   if (!r) throw new Error(`Repository ${id} not found`);
   return r;
+}
+
+function deriveCloneFolderName(remoteUrl: string): string {
+  // Strip trailing slashes and a single trailing .git
+  const trimmed = remoteUrl.trim().replace(/\/+$/, '');
+  const noGit = trimmed.replace(/\.git$/i, '');
+  // Take the last path segment after / or :
+  const parts = noGit.split(/[/:]/);
+  return (parts[parts.length - 1] || '').trim();
 }

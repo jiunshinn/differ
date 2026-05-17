@@ -1,6 +1,7 @@
 import type {
   BranchInfo,
   ChangedFile,
+  CloneRequest,
   CommentDiffSide,
   CommentLabel,
   CommentTargetKind,
@@ -13,8 +14,13 @@ import type {
   FileReviewStatus,
   GithubAuthState,
   GithubCheckRun,
+  GithubDeviceCode,
+  GithubOAuthConfig,
+  GithubOAuthPollResult,
+  GithubOwnerRef,
   GithubPullRequestDetail,
   GithubPullRequestSummary,
+  GithubRepoSummary,
   GithubSubmitReviewInput,
   RepoStatus,
   Repository,
@@ -27,6 +33,8 @@ import type {
 export interface DifferApi {
   pickRepo: () => Promise<Repository | null>;
   openRepo: (path: string) => Promise<Repository>;
+  pickDirectory: (title?: string) => Promise<string | null>;
+  cloneRepo: (req: CloneRequest) => Promise<Repository>;
   recentRepos: () => Promise<Repository[]>;
   removeRecent: (id: number) => Promise<boolean>;
   setRepoPinned: (id: number, pinned: boolean) => Promise<Repository | null>;
@@ -112,6 +120,13 @@ export interface DifferApi {
   ghAuthStatus: () => Promise<GithubAuthState>;
   ghAuthSetToken: (token: string) => Promise<GithubAuthState>;
   ghAuthClear: () => Promise<GithubAuthState>;
+  ghOauthConfig: () => Promise<GithubOAuthConfig>;
+  ghOauthStart: () => Promise<GithubDeviceCode>;
+  ghOauthPoll: () => Promise<GithubOAuthPollResult>;
+  ghOauthCancel: () => Promise<boolean>;
+  ghListMyRepos: () => Promise<GithubRepoSummary[]>;
+  ghListMyOrgs: () => Promise<GithubOwnerRef[]>;
+  ghListOrgRepos: (org: string) => Promise<GithubRepoSummary[]>;
   ghPrList: (repoId: number) => Promise<GithubPullRequestSummary[]>;
   ghPrDetail: (repoId: number, prNumber: number) => Promise<GithubPullRequestDetail>;
   ghPrCheckout: (repoId: number, prNumber: number) => Promise<ReviewSession>;
