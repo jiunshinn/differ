@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useApp, type ActivityEvent, type ActivityKind, type RightPanelTab } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
@@ -162,8 +163,14 @@ function ChecksCard() {
     <section className="panel-card">
       <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border">
         <strong className="font-semibold tracking-tight">GitHub checks</strong>
-        <button className="btn-ghost h-7 text-xs px-2" onClick={() => void load()} disabled={loading}>
-          {loading ? '…' : '↻'}
+        <button
+          className="btn-ghost h-7 px-2 inline-flex items-center justify-center"
+          onClick={() => void load()}
+          disabled={loading}
+          aria-label="Refresh checks"
+          title="Refresh checks"
+        >
+          <RefreshCw size={13} strokeWidth={2} className={cn(loading && 'animate-spin')} />
         </button>
       </header>
       <div>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import type { TreeEntry } from '@shared/types';
@@ -14,15 +15,17 @@ interface NodeProps extends Props {
   depth: number;
 }
 
-function FileIcon({ kind, open }: { kind: 'dir' | 'file'; open?: boolean }) {
+function DirChevron({ open }: { open: boolean }) {
+  const Icon = open ? ChevronDown : ChevronRight;
+  return <Icon size={12} className="text-text-muted shrink-0" strokeWidth={2.25} />;
+}
+
+function EntryGlyph({ kind, open }: { kind: 'dir' | 'file'; open: boolean }) {
   if (kind === 'dir') {
-    return (
-      <span className="text-text-muted shrink-0 w-3 text-center font-mono text-[11px]">
-        {open ? '▾' : '▸'}
-      </span>
-    );
+    const Icon = open ? FolderOpen : Folder;
+    return <Icon size={14} className="text-text-muted shrink-0" strokeWidth={1.75} />;
   }
-  return <span className="text-text-muted shrink-0 w-3" />;
+  return <File size={14} className="text-text-muted shrink-0" strokeWidth={1.75} />;
 }
 
 function TreeNode({ entry, depth, repoId, selectedPath, onSelectFile }: NodeProps) {
@@ -65,15 +68,20 @@ function TreeNode({ entry, depth, repoId, selectedPath, onSelectFile }: NodeProp
         onClick={onClick}
         title={entry.path}
         className={cn(
-          'w-full h-7 px-2 flex items-center gap-1.5 text-sm text-left rounded-md',
+          'w-full h-7 px-2 flex items-center gap-1 text-sm text-left rounded-md',
           isSelected
             ? 'bg-accent/15 text-text-primary'
             : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary',
         )}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
-        <FileIcon kind={entry.kind} open={open} />
-        <span className="truncate">{entry.name}</span>
+        {entry.kind === 'dir' ? (
+          <DirChevron open={open} />
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        <EntryGlyph kind={entry.kind} open={open} />
+        <span className="truncate ml-1">{entry.name}</span>
       </button>
       {entry.kind === 'dir' && open && (
         <>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Monitor, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import BranchMenu from './BranchMenu';
@@ -39,12 +40,8 @@ export default function TopBar() {
     document.title = titleText;
   }, [titleText]);
 
-  const syncText =
-    repo && status
-      ? status.ahead === 0 && status.behind === 0
-        ? 'in sync'
-        : `↑${status.ahead} ↓${status.behind}`
-      : null;
+  const inSync = !!(repo && status && status.ahead === 0 && status.behind === 0);
+  const hasSync = !!(repo && status);
 
   return (
     <>
@@ -80,10 +77,23 @@ export default function TopBar() {
                   </span>
                 </>
               )}
-              {syncText && (
+              {hasSync && (
                 <>
                   <span className="text-xs">·</span>
-                  <span className="text-xs tabular-nums">{syncText}</span>
+                  {inSync ? (
+                    <span className="text-xs">in sync</span>
+                  ) : (
+                    <span className="text-xs tabular-nums inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-0.5">
+                        <ArrowUp size={11} strokeWidth={2.25} />
+                        {status!.ahead}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <ArrowDown size={11} strokeWidth={2.25} />
+                        {status!.behind}
+                      </span>
+                    </span>
+                  )}
                 </>
               )}
             </>
@@ -102,8 +112,13 @@ export default function TopBar() {
                 disabled={!!busy}
                 onClick={() => run('Refresh', 'fetch', refresh)}
                 title="Refresh status"
+                aria-label="Refresh status"
               >
-                ↻
+                <RefreshCw
+                  size={14}
+                  strokeWidth={2}
+                  className={cn(busy === 'Refresh' && 'animate-spin')}
+                />
               </button>
               <button
                 className="btn"
@@ -167,7 +182,7 @@ function ThemeToggle() {
   const { mode, isDark, setMode } = useTheme();
   const order: ThemeMode[] = ['system', 'light', 'dark'];
   const next = () => setMode(order[(order.indexOf(mode) + 1) % order.length]);
-  const icon = mode === 'system' ? '◐' : isDark ? '☾' : '☀';
+  const Icon = mode === 'system' ? Monitor : isDark ? Moon : Sun;
   const label = mode === 'system' ? 'Theme: System' : mode === 'dark' ? 'Theme: Dark' : 'Theme: Light';
   return (
     <button
@@ -176,7 +191,7 @@ function ThemeToggle() {
       title={`${label} (click to cycle)`}
       aria-label={label}
     >
-      {icon}
+      <Icon size={14} strokeWidth={2} />
     </button>
   );
 }
