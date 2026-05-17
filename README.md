@@ -1,5 +1,7 @@
 # Differ
 
+<img width="2168" height="1402" alt="Screenshot 2026-05-17 at 11 30 10" src="https://github.com/user-attachments/assets/ecf85d21-a542-4f96-b4a2-4b56e8316612" />
+
 A local-first, AI-native Git and GitHub review desktop app.
 
 Differ is a focused desktop surface for reviewing local changes and GitHub PRs, leaving comments, extracting high-quality context, and handing that context to AI coding agents like Codex, Cursor, or Claude Code.
