@@ -1,6 +1,7 @@
 # Differ
 
-<img width="2168" height="1402" alt="Screenshot 2026-05-17 at 11 30 10" src="https://github.com/user-attachments/assets/ecf85d21-a542-4f96-b4a2-4b56e8316612" />
+<img width="2168" height="1402" alt="Screenshot 2026-05-17 at 12 02 00" src="https://github.com/user-attachments/assets/68f337d6-444d-4063-bfaf-06075f2c87db" />
+
 
 A local-first, AI-native Git and GitHub review desktop app.
 
