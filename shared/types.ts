@@ -237,6 +237,12 @@ export interface GithubSubmitReviewInput {
 
 // Context extraction
 
+export interface LineRangeRef {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+}
+
 export interface ContextExtractionInput {
   sessionId: number;
   task: string;
@@ -247,6 +253,8 @@ export interface ContextExtractionInput {
   filePaths: string[];
   // Specific hunks identified by file + hunk header.
   hunks: { filePath: string; hunkHeader: string }[];
+  // Arbitrary line ranges of working-tree files (not tied to a diff).
+  lineRanges?: LineRangeRef[];
 }
 
 export interface ContextExtractionResult {

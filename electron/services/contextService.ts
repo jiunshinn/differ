@@ -11,6 +11,7 @@ import type {
   ContextExtractionResult,
   DiffHunk,
   FileDiff,
+  LineRangeRef,
   ReviewComment,
 } from '../../shared/types';
 
@@ -53,6 +54,7 @@ export async function previewContext(input: ContextExtractionInput): Promise<Con
     fileDiffs,
     selectedFiles: input.filePaths,
     selectedHunks: input.hunks,
+    selectedLineRanges: input.lineRanges ?? [],
   });
 
   return { markdown };
@@ -80,8 +82,15 @@ export function saveContext(sessionId: number, title: string, task: string, outp
   comments: number[];
   files: string[];
   hunks: { filePath: string; hunkHeader: string }[];
+  lineRanges?: LineRangeRef[];
 }): ContextBundle {
   const db = getDb();
+  // Embed line ranges inside the hunks JSON blob to avoid a schema migration,
+  // keeping included_hunks_json as the single "diff-shaped selections" column.
+  const hunksBlob = JSON.stringify({
+    hunks: included.hunks,
+    lineRanges: included.lineRanges ?? [],
+  });
   const r = db
     .prepare(
       `INSERT INTO context_bundles
@@ -94,7 +103,7 @@ export function saveContext(sessionId: number, title: string, task: string, outp
       task,
       JSON.stringify(included.comments),
       JSON.stringify(included.files),
-      JSON.stringify(included.hunks),
+      hunksBlob,
       output,
     );
   return db.prepare(`SELECT * FROM context_bundles WHERE id = ?`).get(r.lastInsertRowid) as ContextBundle;
@@ -114,6 +123,7 @@ interface RenderArgs {
   fileDiffs: Map<string, FileDiff>;
   selectedFiles: string[];
   selectedHunks: { filePath: string; hunkHeader: string }[];
+  selectedLineRanges: LineRangeRef[];
 }
 
 function renderMarkdown(args: RenderArgs): string {
@@ -224,6 +234,47 @@ function renderMarkdown(args: RenderArgs): string {
       lines.push(serializeFileDiffForDisplay(file));
       lines.push('```');
       lines.push('');
+    }
+  }
+
+  if (args.selectedLineRanges.length) {
+    lines.push('# Selected Snippets');
+    lines.push('');
+    const byFile = new Map<string, LineRangeRef[]>();
+    for (const r of args.selectedLineRanges) {
+      const list = byFile.get(r.filePath) ?? [];
+      list.push(r);
+      byFile.set(r.filePath, list);
+    }
+    for (const [filePath, ranges] of byFile) {
+      const fullPath = path.join(args.repoPath, filePath);
+      let contents: string | null = null;
+      try {
+        contents = fs.readFileSync(fullPath, 'utf8');
+      } catch {
+        contents = null;
+      }
+      const ext = path.extname(filePath).replace('.', '');
+      const sorted = [...ranges].sort((a, b) => a.startLine - b.startLine);
+      for (const r of sorted) {
+        lines.push(`## ${filePath}:${r.startLine}-${r.endLine}`);
+        lines.push('');
+        if (contents == null) {
+          lines.push('_File not readable from working tree._');
+          lines.push('');
+          continue;
+        }
+        const allLines = contents.split('\n');
+        const start = Math.max(1, r.startLine);
+        const end = Math.min(allLines.length, r.endLine);
+        const slice = allLines.slice(start - 1, end);
+        const pad = String(end).length;
+        const numbered = slice.map((l, i) => `${String(start + i).padStart(pad, ' ')}  ${l}`);
+        lines.push('```' + ext);
+        lines.push(numbered.join('\n'));
+        lines.push('```');
+        lines.push('');
+      }
     }
   }
 
