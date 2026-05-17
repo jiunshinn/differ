@@ -14,8 +14,11 @@ export default function LeftRail() {
     prs: state.prNumber ? 1 : 0,
   };
 
-  const navItems: { id: 'local' | 'pr-list' | 'context'; label: string; count: number | null }[] = [
+  const conflictCount = state.files.filter((f) => f.group === 'conflicted').length;
+
+  const navItems: { id: 'local' | 'history' | 'pr-list' | 'context'; label: string; count: number | null }[] = [
     { id: 'local', label: 'Changes', count: counts.changes },
+    { id: 'history', label: 'History', count: conflictCount || null },
     { id: 'pr-list', label: 'Pull requests', count: counts.prs || null },
     { id: 'context', label: 'Context', count: state.selectedCommentIds.length + state.selectedHunkKeys.length + state.selectedFilePaths.length },
   ];

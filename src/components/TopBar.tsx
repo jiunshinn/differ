@@ -185,11 +185,12 @@ function ViewSwitch({
   view,
   onChange,
 }: {
-  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context';
-  onChange: (v: 'local' | 'pr-list' | 'context') => void;
+  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context' | 'history';
+  onChange: (v: 'local' | 'pr-list' | 'context' | 'history') => void;
 }) {
   const tabs = [
     { id: 'local' as const, label: 'Local' },
+    { id: 'history' as const, label: 'History' },
     { id: 'pr-list' as const, label: 'Pull requests' },
     { id: 'context' as const, label: 'Context' },
   ];

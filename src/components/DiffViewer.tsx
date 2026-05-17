@@ -137,6 +137,14 @@ export default function DiffViewer() {
           >
             {isReviewed ? 'Reviewed ✓' : 'Mark reviewed'}
           </button>
+          <button
+            className={cn('btn h-8', state.diffFullscreen && 'text-accent border-accent')}
+            onClick={() => dispatch({ type: 'setDiffFullscreen', value: !state.diffFullscreen })}
+            title={state.diffFullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+            aria-label={state.diffFullscreen ? 'Exit full screen' : 'Enter full screen'}
+          >
+            {state.diffFullscreen ? '⤡' : '⤢'}
+          </button>
         </div>
       </div>
 

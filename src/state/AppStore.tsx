@@ -10,8 +10,9 @@ import type {
   ReviewSession,
 } from '@shared/types';
 
-export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context';
+export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context' | 'history';
 export type RightPanelTab = 'overview' | 'comments' | 'context';
+export type HistoryTab = 'graph' | 'resolve' | 'sync';
 
 export type ActivityKind =
   | 'comment_created'
@@ -43,12 +44,14 @@ export interface AppState {
   files: ChangedFile[];
   diffMode: 'unified' | 'split';
   diffStaged: boolean;
+  diffFullscreen: boolean;
   ignoreWhitespace: boolean;
   diffsByFile: Record<string, FileDiff | null>;
   comments: ReviewComment[];
   fileStates: FileReviewState[];
   prNumber: number | null;
   rightPanelTab: RightPanelTab;
+  historyTab: HistoryTab;
   fileFilter: string;
   // selections
   selectedCommentIds: number[];
@@ -67,12 +70,14 @@ type Action =
   | { type: 'setSelectedFile'; filePath: string | null }
   | { type: 'setDiffMode'; mode: 'unified' | 'split' }
   | { type: 'setDiffStaged'; staged: boolean }
+  | { type: 'setDiffFullscreen'; value: boolean }
   | { type: 'setIgnoreWhitespace'; value: boolean }
   | { type: 'setFileDiff'; filePath: string; diff: FileDiff | null }
   | { type: 'setComments'; comments: ReviewComment[] }
   | { type: 'setFileStates'; states: FileReviewState[] }
   | { type: 'setPrNumber'; n: number | null }
   | { type: 'setRightPanelTab'; tab: RightPanelTab }
+  | { type: 'setHistoryTab'; tab: HistoryTab }
   | { type: 'setFileFilter'; value: string }
   | { type: 'toggleCommentSelection'; id: number; on?: boolean }
   | { type: 'toggleFileSelection'; path: string; on?: boolean }
@@ -90,12 +95,14 @@ const initial: AppState = {
   files: [],
   diffMode: 'split',
   diffStaged: false,
+  diffFullscreen: false,
   ignoreWhitespace: false,
   diffsByFile: {},
   comments: [],
   fileStates: [],
   prNumber: null,
   rightPanelTab: 'overview',
+  historyTab: 'graph',
   fileFilter: '',
   selectedCommentIds: [],
   selectedFilePaths: [],
@@ -123,6 +130,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, diffMode: action.mode };
     case 'setDiffStaged':
       return { ...state, diffStaged: action.staged, diffsByFile: {} };
+    case 'setDiffFullscreen':
+      return { ...state, diffFullscreen: action.value };
     case 'setIgnoreWhitespace':
       return { ...state, ignoreWhitespace: action.value, diffsByFile: {} };
     case 'setFileDiff':
@@ -135,6 +144,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, prNumber: action.n };
     case 'setRightPanelTab':
       return { ...state, rightPanelTab: action.tab };
+    case 'setHistoryTab':
+      return { ...state, historyTab: action.tab };
     case 'setFileFilter':
       return { ...state, fileFilter: action.value };
     case 'toggleCommentSelection': {

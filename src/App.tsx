@@ -5,6 +5,7 @@ import LocalChangesView from './views/LocalChangesView';
 import PullRequestsView from './views/PullRequestsView';
 import PullRequestDetailView from './views/PullRequestDetailView';
 import ContextBuilderView from './views/ContextBuilderView';
+import HistoryView from './views/HistoryView';
 import TopBar from './components/TopBar';
 import ProjectSidebar from './components/ProjectSidebar';
 import Toast from './components/Toast';
@@ -20,6 +21,7 @@ function Shell() {
         <main className="min-h-0">
           {state.view === 'picker' && <RepositoryPicker />}
           {state.view === 'local' && <LocalChangesView />}
+          {state.view === 'history' && <HistoryView />}
           {state.view === 'pr-list' && <PullRequestsView />}
           {state.view === 'pr-detail' && <PullRequestDetailView />}
           {state.view === 'context' && <ContextBuilderView />}
