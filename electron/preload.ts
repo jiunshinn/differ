@@ -16,8 +16,12 @@ const api = {
   branches: (repoId: number) => invoke(IpcChannels.repoBranches, repoId),
   commits: (repoId: number, limit?: number) => invoke(IpcChannels.repoCommits, repoId, limit),
   fetch: (repoId: number) => invoke(IpcChannels.repoFetch, repoId),
-  pull: (repoId: number) => invoke(IpcChannels.repoPull, repoId),
+  pull: (repoId: number, opts?: { rebase?: boolean }) => invoke(IpcChannels.repoPull, repoId, opts),
   push: (repoId: number, opts?: { setUpstream?: boolean }) => invoke(IpcChannels.repoPush, repoId, opts),
+  sync: (repoId: number) => invoke(IpcChannels.repoSync, repoId),
+  rebaseContinue: (repoId: number) => invoke(IpcChannels.repoRebaseContinue, repoId),
+  rebaseAbort: (repoId: number) => invoke(IpcChannels.repoRebaseAbort, repoId),
+  mergeAbort: (repoId: number) => invoke(IpcChannels.repoMergeAbort, repoId),
   checkout: (repoId: number, branch: string) => invoke(IpcChannels.repoCheckout, repoId, branch),
   createBranch: (repoId: number, branch: string, checkout: boolean) =>
     invoke(IpcChannels.repoCreateBranch, repoId, branch, checkout),

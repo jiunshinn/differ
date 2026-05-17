@@ -231,9 +231,16 @@ function formatRelative(iso: string): string {
 // ── Resolve ────────────────────────────────────────────────────────────────
 
 function ResolveScreen() {
-  const { state, toast } = useApp();
+  const { state, toast, refresh } = useApp();
   const conflicts = state.files.filter((f) => f.group === 'conflicted');
   const [activePath, setActivePath] = useState<string | null>(conflicts[0]?.path ?? null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const repoId = state.repo?.id ?? null;
+  const rebaseInProgress = !!state.status?.rebaseInProgress;
+  const mergeInProgress = !!state.status?.mergeInProgress;
+  const operationLabel = rebaseInProgress ? 'rebase' : mergeInProgress ? 'merge' : null;
+  const hasUnresolved = conflicts.length > 0;
+  const canContinue = operationLabel === 'rebase' && !hasUnresolved;
 
   useEffect(() => {
     if (!activePath && conflicts[0]) setActivePath(conflicts[0].path);
@@ -242,8 +249,35 @@ function ResolveScreen() {
     }
   }, [conflicts.map((c) => c.path).join('|')]);
 
+  const runOp = async (label: string, fn: () => Promise<void>) => {
+    if (repoId === null) return;
+    setBusy(label);
+    try {
+      await fn();
+      await refresh();
+      toast('success', `${label} succeeded`);
+    } catch (e) {
+      toast('error', (e as Error).message.split('\n')[0]?.slice(0, 240) ?? (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const continueRebase = () => {
+    if (repoId === null) return;
+    void runOp('Continue rebase', () => api.rebaseContinue(repoId).then(() => undefined));
+  };
+  const abortRebase = () => {
+    if (repoId === null) return;
+    void runOp('Abort rebase', () => api.rebaseAbort(repoId).then(() => undefined));
+  };
+  const abortMerge = () => {
+    if (repoId === null) return;
+    void runOp('Abort merge', () => api.mergeAbort(repoId).then(() => undefined));
+  };
+
   return (
-    <div className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)]">
+    <div className="h-full min-h-0 grid grid-rows-[auto_auto_minmax(0,1fr)]">
       <div className="px-3.5 py-3 border-b border-border bg-bg-panel flex items-center justify-between gap-3">
         <div>
           <h1 className="text-base font-semibold tracking-tight">Merge conflict resolver</h1>
@@ -260,6 +294,42 @@ function ResolveScreen() {
           </button>
         </div>
       </div>
+
+      {operationLabel && (
+        <div className="px-3.5 py-2.5 border-b border-border bg-warn/10 flex items-center justify-between gap-3">
+          <div className="text-sm">
+            <span className="font-semibold capitalize">{operationLabel} in progress.</span>{' '}
+            <span className="text-text-secondary">
+              {hasUnresolved
+                ? `Resolve the ${conflicts.length} remaining conflict${conflicts.length === 1 ? '' : 's'} and stage each file, then continue.`
+                : operationLabel === 'rebase'
+                ? 'All conflicts staged. Click Continue to resume the rebase.'
+                : 'All conflicts staged. Create a merge commit from Local Changes to finish.'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {operationLabel === 'rebase' ? (
+              <>
+                <button
+                  className="btn-primary"
+                  disabled={!!busy || !canContinue}
+                  title={canContinue ? 'git rebase --continue' : 'Stage all conflicted files first'}
+                  onClick={continueRebase}
+                >
+                  {busy === 'Continue rebase' ? 'Continuing…' : 'Continue'}
+                </button>
+                <button className="btn" disabled={!!busy} onClick={abortRebase}>
+                  {busy === 'Abort rebase' ? 'Aborting…' : 'Abort rebase'}
+                </button>
+              </>
+            ) : (
+              <button className="btn" disabled={!!busy} onClick={abortMerge}>
+                {busy === 'Abort merge' ? 'Aborting…' : 'Abort merge'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="min-h-0 p-3.5 grid grid-cols-[280px_minmax(0,1fr)] gap-3.5">
         <aside className="panel-card flex flex-col min-h-0">

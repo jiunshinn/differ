@@ -18,6 +18,10 @@ import {
   parseGithubFromRemote,
   pull as gitPull,
   push as gitPush,
+  syncWithRemote as gitSync,
+  rebaseContinue as gitRebaseContinue,
+  rebaseAbort as gitRebaseAbort,
+  mergeAbort as gitMergeAbort,
   stageFile,
   stageHunk,
   unstageFile,
@@ -116,9 +120,33 @@ export function registerIpcHandlers(deps: Deps): void {
     return true;
   });
 
-  handle(IpcChannels.repoPull, async (repoId: number) => {
+  handle(IpcChannels.repoPull, async (repoId: number, opts?: { rebase?: boolean }) => {
     const repo = mustRepo(repoId);
-    await gitPull(repo.path);
+    await gitPull(repo.path, opts ?? {});
+    return true;
+  });
+
+  handle(IpcChannels.repoSync, async (repoId: number) => {
+    const repo = mustRepo(repoId);
+    await gitSync(repo.path);
+    return true;
+  });
+
+  handle(IpcChannels.repoRebaseContinue, async (repoId: number) => {
+    const repo = mustRepo(repoId);
+    await gitRebaseContinue(repo.path);
+    return true;
+  });
+
+  handle(IpcChannels.repoRebaseAbort, async (repoId: number) => {
+    const repo = mustRepo(repoId);
+    await gitRebaseAbort(repo.path);
+    return true;
+  });
+
+  handle(IpcChannels.repoMergeAbort, async (repoId: number) => {
+    const repo = mustRepo(repoId);
+    await gitMergeAbort(repo.path);
     return true;
   });
 

@@ -8,9 +8,15 @@ import { cn } from '../utils/cn';
 import { useTheme, type ThemeMode } from '../utils/theme';
 
 export default function TopBar() {
-  const { state, dispatch, refresh, logActivity, toast } = useApp();
+  const { state, dispatch, refresh, logActivity, toast, silentFetch } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   const repo = state.repo;
   const status = state.status;
@@ -80,18 +86,40 @@ export default function TopBar() {
               {hasSync && (
                 <>
                   <span className="text-xs">·</span>
-                  {inSync ? (
-                    <span className="text-xs">in sync</span>
-                  ) : (
-                    <span className="text-xs tabular-nums inline-flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-0.5">
-                        <ArrowUp size={11} strokeWidth={2.25} />
-                        {status!.ahead}
-                      </span>
-                      <span className="inline-flex items-center gap-0.5">
-                        <ArrowDown size={11} strokeWidth={2.25} />
-                        {status!.behind}
-                      </span>
+                  <button
+                    type="button"
+                    onClick={() => void silentFetch()}
+                    className={cn(
+                      'text-xs tabular-nums inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-bg-subtle transition-colors',
+                      status!.behind > 0 && 'text-warn',
+                    )}
+                    title={
+                      status!.behind > 0
+                        ? `origin has ${status!.behind} commit${status!.behind === 1 ? '' : 's'} you don't have. Click to fetch.`
+                        : 'Click to fetch from origin'
+                    }
+                  >
+                    {inSync ? (
+                      <span>in sync</span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-0.5">
+                          <ArrowUp size={11} strokeWidth={2.25} />
+                          {status!.ahead}
+                        </span>
+                        <span className={cn('inline-flex items-center gap-0.5', status!.behind > 0 && 'font-semibold')}>
+                          <ArrowDown size={11} strokeWidth={2.25} />
+                          {status!.behind}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                  {state.lastFetchedAt && (
+                    <span
+                      className="text-[10px] text-text-muted"
+                      title={new Date(state.lastFetchedAt).toLocaleString()}
+                    >
+                      {formatAgo(now - state.lastFetchedAt)}
                     </span>
                   )}
                 </>
@@ -126,44 +154,21 @@ export default function TopBar() {
                 onClick={() =>
                   run('Fetch', 'fetch', async () => {
                     await api.fetch(repo.id);
+                    dispatch({ type: 'setLastFetchedAt', at: Date.now() });
                     await refresh();
                   })
                 }
               >
                 Fetch
               </button>
-              <button
-                className="btn"
-                disabled={!!busy}
-                onClick={() =>
-                  run('Pull', 'pull', async () => {
-                    await api.pull(repo.id);
-                    await refresh();
-                  })
-                }
-              >
-                Pull
-              </button>
-              <button
-                className="btn"
-                disabled={!!busy}
-                onClick={() =>
-                  run('Push', 'push', async () => {
-                    try {
-                      await api.push(repo.id);
-                    } catch (e) {
-                      if ((e as Error).message.includes('no upstream')) {
-                        await api.push(repo.id, { setUpstream: true });
-                      } else {
-                        throw e;
-                      }
-                    }
-                    await refresh();
-                  })
-                }
-              >
-                Push
-              </button>
+              <SyncButton
+                busy={busy}
+                run={run}
+                refresh={refresh}
+                repoId={repo.id}
+                status={status}
+                dispatch={dispatch}
+              />
               <button className="btn" onClick={() => setAuthOpen(true)}>
                 GitHub
               </button>
@@ -176,6 +181,158 @@ export default function TopBar() {
       {authOpen && <GithubAuthDialog onClose={() => setAuthOpen(false)} />}
     </>
   );
+}
+
+type RunFn = (label: string, kind: 'fetch' | 'pull' | 'push', fn: () => Promise<void>) => Promise<void>;
+
+interface SyncButtonProps {
+  busy: string | null;
+  run: RunFn;
+  refresh: () => Promise<void>;
+  repoId: number;
+  status: import('@shared/types').RepoStatus | null;
+  dispatch: ReturnType<typeof useApp>['dispatch'];
+}
+
+function isConflictError(message: string): boolean {
+  return /CONFLICT|conflict|merge conflict|unmerged/i.test(message);
+}
+
+type SyncMode = 'detached' | 'publish' | 'sync' | 'push' | 'pull' | 'up-to-date';
+
+function deriveSyncMode(status: import('@shared/types').RepoStatus | null): SyncMode {
+  if (!status) return 'up-to-date';
+  if (status.detached) return 'detached';
+  if (!status.upstream) return 'publish';
+  if (status.ahead > 0 && status.behind > 0) return 'sync';
+  if (status.behind > 0) return 'pull';
+  if (status.ahead > 0) return 'push';
+  return 'up-to-date';
+}
+
+function friendlyGitError(message: string): string {
+  if (/non-fast-forward/i.test(message))
+    return 'Remote has new commits. Click Sync to integrate before pushing.';
+  if (/Please commit your changes or stash them/i.test(message) || /would be overwritten/i.test(message))
+    return 'You have uncommitted changes. Commit or stash them, then try again.';
+  if (/CONFLICT|conflict|merge conflict/i.test(message))
+    return 'Rebase paused with conflicts. Resolve them in Local Changes, then continue.';
+  if (/no upstream/i.test(message))
+    return 'This branch has no upstream. Use Publish to create one.';
+  if (/Authentication failed|could not read Username|terminal prompts disabled/i.test(message))
+    return 'Authentication failed. Check your credentials or sign in to GitHub.';
+  // Trim long stderr dumps to the first line.
+  return message.split('\n')[0]?.slice(0, 240) ?? message;
+}
+
+function SyncButton({ busy, run, refresh, repoId, status, dispatch }: SyncButtonProps) {
+  const mode = deriveSyncMode(status);
+  const ahead = status?.ahead ?? 0;
+  const behind = status?.behind ?? 0;
+
+  const labels: Record<SyncMode, string> = {
+    detached: 'Detached',
+    'up-to-date': 'Up to date',
+    publish: `Publish ↑${ahead}`,
+    push: `Push ↑${ahead}`,
+    pull: `Pull ↓${behind}`,
+    sync: `Sync ↑${ahead} ↓${behind}`,
+  };
+  const titles: Record<SyncMode, string> = {
+    detached: 'HEAD is detached — checkout a branch first',
+    'up-to-date': 'Nothing to push or pull',
+    publish: 'Push and set upstream to origin',
+    push: `Push ${ahead} local commit${ahead === 1 ? '' : 's'} to origin`,
+    pull: `Pull ${behind} remote commit${behind === 1 ? '' : 's'} (fast-forward)`,
+    sync: `Rebase ${ahead} local commit${ahead === 1 ? '' : 's'} on top of ${behind} remote commit${behind === 1 ? '' : 's'}, then push`,
+  };
+
+  const disabled = !!busy || mode === 'detached' || mode === 'up-to-date';
+  const isPrimary = mode === 'sync' || mode === 'push' || mode === 'publish';
+
+  const handleError = async (raw: string): Promise<never> => {
+    if (isConflictError(raw)) {
+      // Pull/Sync paused mid-rebase or mid-merge — refresh status (so conflicted files surface),
+      // jump the user to the Resolve view, and report a guided message.
+      await refresh();
+      dispatch({ type: 'view', view: 'history' });
+      dispatch({ type: 'setHistoryTab', tab: 'resolve' });
+      throw new Error('Conflicts detected. Resolve them in the Resolve view, then continue or abort.');
+    }
+    throw new Error(friendlyGitError(raw));
+  };
+
+  const onClick = (): void => {
+    if (mode === 'sync') {
+      void run('Sync', 'push', async () => {
+        try {
+          await api.sync(repoId);
+        } catch (e) {
+          await handleError((e as Error).message);
+        }
+        await refresh();
+      });
+      return;
+    }
+    if (mode === 'publish') {
+      void run('Publish', 'push', async () => {
+        try {
+          await api.push(repoId, { setUpstream: true });
+        } catch (e) {
+          await handleError((e as Error).message);
+        }
+        await refresh();
+      });
+      return;
+    }
+    if (mode === 'push') {
+      void run('Push', 'push', async () => {
+        try {
+          await api.push(repoId);
+        } catch (e) {
+          const msg = (e as Error).message;
+          if (/no upstream/i.test(msg)) {
+            await api.push(repoId, { setUpstream: true });
+          } else {
+            await handleError(msg);
+          }
+        }
+        await refresh();
+      });
+      return;
+    }
+    if (mode === 'pull') {
+      void run('Pull', 'pull', async () => {
+        try {
+          await api.pull(repoId);
+        } catch (e) {
+          await handleError((e as Error).message);
+        }
+        await refresh();
+      });
+      return;
+    }
+  };
+
+  return (
+    <button
+      className={isPrimary ? 'btn-primary' : 'btn'}
+      disabled={disabled}
+      title={titles[mode]}
+      onClick={onClick}
+    >
+      {labels[mode]}
+    </button>
+  );
+}
+
+function formatAgo(ms: number): string {
+  const sec = Math.max(1, Math.floor(ms / 1000));
+  if (sec < 60) return `fetched ${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `fetched ${min}m ago`;
+  const hr = Math.floor(min / 60);
+  return `fetched ${hr}h ago`;
 }
 
 function ThemeToggle() {

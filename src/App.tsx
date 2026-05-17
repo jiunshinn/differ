@@ -10,9 +10,11 @@ import CodeBrowserView from './views/CodeBrowserView';
 import TopBar from './components/TopBar';
 import ProjectSidebar from './components/ProjectSidebar';
 import Toast from './components/Toast';
+import { useAutoFetch } from './utils/useAutoFetch';
 
 function Shell() {
   const { state } = useApp();
+  useAutoFetch();
 
   return (
     <div className="h-full w-full bg-bg overflow-hidden flex">

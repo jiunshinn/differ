@@ -93,6 +93,8 @@ export interface RepoStatus {
   behind: number;
   detached: boolean;
   files: ChangedFile[];
+  rebaseInProgress: boolean;
+  mergeInProgress: boolean;
 }
 
 export interface CommitSummary {
@@ -277,6 +279,10 @@ export const IpcChannels = {
   repoFetch: 'repo:fetch',
   repoPull: 'repo:pull',
   repoPush: 'repo:push',
+  repoSync: 'repo:sync',
+  repoRebaseContinue: 'repo:rebaseContinue',
+  repoRebaseAbort: 'repo:rebaseAbort',
+  repoMergeAbort: 'repo:mergeAbort',
   repoCheckout: 'repo:checkout',
   repoCreateBranch: 'repo:createBranch',
   repoStageFile: 'repo:stageFile',
