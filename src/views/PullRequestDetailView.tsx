@@ -82,7 +82,7 @@ export default function PullRequestDetailView() {
                 Back
               </button>
               <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
-                Submit
+                GitHub review
               </button>
             </div>
             <button
@@ -279,12 +279,33 @@ function SubmitReviewDialog({
   const { state, toast, loadComments } = useApp();
   const [body, setBody] = useState('');
   const [event, setEvent] = useState<GithubReviewEvent>('COMMENT');
+  const [selectedCommentIds, setSelectedCommentIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
 
   const lineComments = useMemo(
-    () => state.comments.filter((c) => c.target_kind === 'line' && c.status === 'open'),
+    () =>
+      state.comments.filter(
+        (c) =>
+          c.target_kind === 'line' &&
+          c.status === 'open' &&
+          c.line_number != null &&
+          (c.diff_side === 'old' || c.diff_side === 'new'),
+      ),
     [state.comments],
   );
+  const selectedLineComments = useMemo(
+    () => lineComments.filter((c) => selectedCommentIds.includes(c.id)),
+    [lineComments, selectedCommentIds],
+  );
+  const canSubmit = event === 'APPROVE' || body.trim().length > 0 || selectedLineComments.length > 0;
+
+  useEffect(() => {
+    setSelectedCommentIds((ids) => ids.filter((id) => lineComments.some((c) => c.id === id)));
+  }, [lineComments]);
+
+  const toggleComment = (id: number) => {
+    setSelectedCommentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
 
   const submit = async () => {
     if (!state.repo) return;
@@ -294,14 +315,14 @@ function SubmitReviewDialog({
         prNumber: detail.number,
         event,
         body,
-        comments: lineComments.map((c) => ({
+        comments: selectedLineComments.map((c) => ({
           path: c.file_path,
           line: c.line_number ?? 1,
           side: c.diff_side === 'old' ? 'LEFT' : 'RIGHT',
           body: c.body,
         })),
       });
-      for (const c of lineComments) {
+      for (const c of selectedLineComments) {
         await api.updateComment(c.id, { status: 'resolved' });
       }
       await loadComments();
@@ -319,7 +340,8 @@ function SubmitReviewDialog({
       <div className="panel-card p-4 w-[560px] shadow-raised">
         <div className="text-base font-semibold mb-1">Submit review · #{detail.number}</div>
         <div className="text-xs text-text-muted mb-3">
-          {lineComments.length} pending line comment{lineComments.length === 1 ? '' : 's'} will be sent.
+          {selectedLineComments.length} of {lineComments.length} local line comment
+          {lineComments.length === 1 ? '' : 's'} selected for GitHub.
         </div>
         <textarea
           className="input min-h-[140px] font-sans"
@@ -327,6 +349,54 @@ function SubmitReviewDialog({
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
+        <section className="mt-3 border border-border rounded-card overflow-hidden">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-bg-subtle border-b border-border">
+            <span className="text-xs font-semibold text-text-secondary">Line comments</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                className="btn-ghost h-7 text-[11px] px-2"
+                onClick={() => setSelectedCommentIds(lineComments.map((c) => c.id))}
+                disabled={!lineComments.length}
+              >
+                Select all
+              </button>
+              <button
+                className="btn-ghost h-7 text-[11px] px-2"
+                onClick={() => setSelectedCommentIds([])}
+                disabled={!selectedCommentIds.length}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[220px] overflow-auto">
+            {lineComments.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-text-muted">No local line comments ready to submit.</div>
+            ) : (
+              lineComments.map((c) => (
+                <label
+                  key={c.id}
+                  className="grid grid-cols-[auto_1fr] gap-2 px-3 py-2.5 border-b last:border-b-0 border-border cursor-pointer hover:bg-bg-subtle"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={selectedCommentIds.includes(c.id)}
+                    onChange={() => toggleComment(c.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-mono text-text-muted truncate">
+                      {c.file_path} · {c.diff_side === 'old' ? '-' : '+'}
+                      {c.line_number}
+                      {c.label && <span className="ml-1 chip">{c.label}</span>}
+                    </span>
+                    <span className="block mt-1 text-sm whitespace-pre-wrap">{c.body}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        </section>
         <div className="mt-3 flex items-center gap-3">
           {(['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as const).map((ev) => (
             <label key={ev} className="text-sm flex items-center gap-1 cursor-pointer">
@@ -338,8 +408,8 @@ function SubmitReviewDialog({
           <button className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void submit()} disabled={busy}>
-            Submit
+          <button className="btn-primary" onClick={() => void submit()} disabled={busy || !canSubmit}>
+            Submit to GitHub
           </button>
         </div>
       </div>
