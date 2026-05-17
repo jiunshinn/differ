@@ -39,7 +39,9 @@ export default function TopBar() {
   const titleText = repo
     ? state.view === 'pr-detail' && state.prNumber
       ? `Differ · ${repo.name} · PR #${state.prNumber}`
-      : `Differ · ${repo.name}`
+      : state.view === 'issues'
+        ? `Differ · ${repo.name} · Issues`
+        : `Differ · ${repo.name}`
     : 'Differ';
 
   useEffect(() => {
@@ -357,14 +359,15 @@ function ViewSwitch({
   view,
   onChange,
 }: {
-  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'context' | 'history' | 'code';
-  onChange: (v: 'local' | 'pr-list' | 'context' | 'history' | 'code') => void;
+  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'context' | 'history' | 'code';
+  onChange: (v: 'local' | 'pr-list' | 'issues' | 'context' | 'history' | 'code') => void;
 }) {
   const tabs = [
     { id: 'local' as const, label: 'Local' },
     { id: 'code' as const, label: 'Code' },
     { id: 'history' as const, label: 'History' },
     { id: 'pr-list' as const, label: 'Pull requests' },
+    { id: 'issues' as const, label: 'Issues' },
     { id: 'context' as const, label: 'Context' },
   ];
   return (

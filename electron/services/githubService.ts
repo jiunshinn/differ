@@ -4,6 +4,11 @@ import { getSetting, setSetting, deleteSetting } from './db';
 import type {
   GithubAuthState,
   GithubCheckRun,
+  GithubIssueDetail,
+  GithubIssueLabel,
+  GithubIssueStateFilter,
+  GithubIssueSummary,
+  GithubIssueUserRef,
   GithubOwnerRef,
   GithubPullRequestDetail,
   GithubPullRequestSummary,
@@ -132,6 +137,104 @@ export async function getPullRequestDetail(
     changedFiles: data.changed_files,
     additions: data.additions,
     deletions: data.deletions,
+  };
+}
+
+type OctokitIssue = Awaited<ReturnType<Octokit['issues']['listForRepo']>>['data'][number];
+type OctokitIssueDetail = Awaited<ReturnType<Octokit['issues']['get']>>['data'];
+type OctokitIssueComment = Awaited<ReturnType<Octokit['issues']['listComments']>>['data'][number];
+type OctokitIssueLabel = string | {
+  name?: string | null;
+  color?: string | null;
+  description?: string | null;
+};
+
+function mapIssueLabel(label: OctokitIssueLabel): GithubIssueLabel {
+  if (typeof label === 'string') {
+    return { name: label, color: null, description: null };
+  }
+  return {
+    name: label.name ?? 'label',
+    color: label.color ?? null,
+    description: label.description ?? null,
+  };
+}
+
+function mapIssueUser(user: { login?: string; avatar_url?: string | null } | null | undefined): GithubIssueUserRef | null {
+  if (!user?.login) return null;
+  return { login: user.login, avatarUrl: user.avatar_url ?? null };
+}
+
+function mapIssue(issue: OctokitIssue | OctokitIssueDetail): GithubIssueSummary {
+  return {
+    number: issue.number,
+    title: issue.title,
+    state: issue.state as GithubIssueSummary['state'],
+    author: issue.user?.login ?? 'unknown',
+    labels: issue.labels.map((label) => mapIssueLabel(label as OctokitIssueLabel)),
+    assignees: (issue.assignees ?? [])
+      .map((user) => mapIssueUser(user))
+      .filter((user): user is GithubIssueUserRef => user != null),
+    url: issue.html_url,
+    createdAt: issue.created_at,
+    updatedAt: issue.updated_at,
+    closedAt: issue.closed_at ?? null,
+    commentsCount: issue.comments ?? 0,
+  };
+}
+
+function mapIssueComment(comment: OctokitIssueComment): GithubIssueDetail['comments'][number] {
+  return {
+    id: comment.id,
+    author: comment.user?.login ?? 'unknown',
+    body: comment.body ?? '',
+    url: comment.html_url,
+    createdAt: comment.created_at,
+    updatedAt: comment.updated_at,
+  };
+}
+
+export async function listIssues(
+  owner: string,
+  repo: string,
+  state: GithubIssueStateFilter = 'open',
+): Promise<GithubIssueSummary[]> {
+  const client = mustClient();
+  const res = await client.issues.listForRepo({
+    owner,
+    repo,
+    state,
+    per_page: 50,
+    sort: 'updated',
+    direction: 'desc',
+  });
+  return res.data
+    .filter((issue) => !issue.pull_request)
+    .map(mapIssue);
+}
+
+export async function getIssueDetail(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<GithubIssueDetail> {
+  const client = mustClient();
+  const [{ data }, comments] = await Promise.all([
+    client.issues.get({ owner, repo, issue_number: issueNumber }),
+    client.paginate(client.issues.listComments, {
+      owner,
+      repo,
+      issue_number: issueNumber,
+      per_page: 100,
+    }) as Promise<OctokitIssueComment[]>,
+  ]);
+  if ('pull_request' in data && data.pull_request) {
+    throw new Error(`GitHub #${issueNumber} is a pull request, not an issue.`);
+  }
+  return {
+    ...mapIssue(data),
+    body: data.body ?? '',
+    comments: comments.map(mapIssueComment),
   };
 }
 

@@ -65,5 +65,5 @@ The Client ID is public information by design — it's safe to ship in built art
 - Local comments at file / hunk / line scope, with labels (issue, question, refactor, test, ask-ai), resolved/open status, filtering.
 - AI context builder: select comments, hunks, files, type a task + test command, preview Markdown, copy to clipboard, save bundle.
 - Local Git: stage/unstage files and hunks, commit, amend, branch create/checkout, fetch/pull/push.
-- GitHub: OAuth Device Flow sign-in or personal-access-token auth, open PR list, checkout PR locally, review PR diff, draft line comments and submit a review (Comment / Approve / Request changes).
+- GitHub: OAuth Device Flow sign-in or personal-access-token auth, open PR list, checkout PR locally, review PR diff, draft line comments and submit a review (Comment / Approve / Request changes). Issues view for browsing open / closed issues, labels, assignees, descriptions, and comments inside the app.
 - Native window header, system / light / dark theme toggle.

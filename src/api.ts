@@ -15,6 +15,9 @@ import type {
   GithubAuthState,
   GithubCheckRun,
   GithubDeviceCode,
+  GithubIssueDetail,
+  GithubIssueStateFilter,
+  GithubIssueSummary,
   GithubOAuthConfig,
   GithubOAuthPollResult,
   GithubOwnerRef,
@@ -133,6 +136,9 @@ export interface DifferApi {
   ghPrSubmitReview: (repoId: number, input: GithubSubmitReviewInput) => Promise<boolean>;
   ghPrOpenInBrowser: (repoId: number, prNumber: number) => Promise<boolean>;
   ghPrChecks: (repoId: number, ref: string) => Promise<GithubCheckRun[]>;
+  ghIssueList: (repoId: number, state?: GithubIssueStateFilter) => Promise<GithubIssueSummary[]>;
+  ghIssueDetail: (repoId: number, issueNumber: number) => Promise<GithubIssueDetail>;
+  ghIssueOpenInBrowser: (repoId: number, issueNumber: number) => Promise<boolean>;
 
   copyToClipboard: (text: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;

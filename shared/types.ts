@@ -196,6 +196,48 @@ export interface GithubPullRequestDetail extends GithubPullRequestSummary {
   deletions: number;
 }
 
+export type GithubIssueState = 'open' | 'closed';
+export type GithubIssueStateFilter = GithubIssueState | 'all';
+
+export interface GithubIssueLabel {
+  name: string;
+  color: string | null;
+  description: string | null;
+}
+
+export interface GithubIssueUserRef {
+  login: string;
+  avatarUrl: string | null;
+}
+
+export interface GithubIssueSummary {
+  number: number;
+  title: string;
+  state: GithubIssueState;
+  author: string;
+  labels: GithubIssueLabel[];
+  assignees: GithubIssueUserRef[];
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  commentsCount: number;
+}
+
+export interface GithubIssueComment {
+  id: number;
+  author: string;
+  body: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GithubIssueDetail extends GithubIssueSummary {
+  body: string;
+  comments: GithubIssueComment[];
+}
+
 export type GithubCheckStatus = 'queued' | 'in_progress' | 'completed';
 export type GithubCheckConclusion =
   | 'success'
@@ -403,6 +445,9 @@ export const IpcChannels = {
   ghPrSubmitReview: 'gh:prSubmitReview',
   ghPrOpenInBrowser: 'gh:prOpenInBrowser',
   ghPrChecks: 'gh:prChecks',
+  ghIssueList: 'gh:issueList',
+  ghIssueDetail: 'gh:issueDetail',
+  ghIssueOpenInBrowser: 'gh:issueOpenInBrowser',
   ghOauthConfig: 'gh:oauthConfig',
   ghOauthStart: 'gh:oauthStart',
   ghOauthPoll: 'gh:oauthPoll',

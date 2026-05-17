@@ -89,6 +89,10 @@ const api = {
   ghPrSubmitReview: (repoId: number, input: unknown) => invoke(IpcChannels.ghPrSubmitReview, repoId, input),
   ghPrOpenInBrowser: (repoId: number, prNumber: number) => invoke(IpcChannels.ghPrOpenInBrowser, repoId, prNumber),
   ghPrChecks: (repoId: number, ref: string) => invoke(IpcChannels.ghPrChecks, repoId, ref),
+  ghIssueList: (repoId: number, state?: string) => invoke(IpcChannels.ghIssueList, repoId, state),
+  ghIssueDetail: (repoId: number, issueNumber: number) => invoke(IpcChannels.ghIssueDetail, repoId, issueNumber),
+  ghIssueOpenInBrowser: (repoId: number, issueNumber: number) =>
+    invoke(IpcChannels.ghIssueOpenInBrowser, repoId, issueNumber),
 
   // System
   copyToClipboard: (text: string) => invoke(IpcChannels.clipboardWrite, text),

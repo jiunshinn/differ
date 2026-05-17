@@ -52,9 +52,11 @@ import { previewContext, saveContext } from './services/contextService';
 import {
   clearAuth,
   getAuthStatus,
+  getIssueDetail,
   getPullRequestDetail,
   getStoredToken,
   listCheckRuns,
+  listIssues,
   listMyOrgs,
   listMyRepos,
   listOrgRepos,
@@ -71,6 +73,7 @@ import {
 import type {
   CloneRequest,
   ContextExtractionInput,
+  GithubIssueStateFilter,
   GithubSubmitReviewInput,
 } from '../shared/types';
 
@@ -412,6 +415,25 @@ export function registerIpcHandlers(deps: Deps): void {
     const repo = mustRepo(repoId);
     if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
     return listCheckRuns(repo.github_owner, repo.github_repo, ref);
+  });
+
+  handle(IpcChannels.ghIssueList, async (repoId: number, state?: GithubIssueStateFilter) => {
+    const repo = mustRepo(repoId);
+    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
+    return listIssues(repo.github_owner, repo.github_repo, state ?? 'open');
+  });
+
+  handle(IpcChannels.ghIssueDetail, async (repoId: number, issueNumber: number) => {
+    const repo = mustRepo(repoId);
+    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
+    return getIssueDetail(repo.github_owner, repo.github_repo, issueNumber);
+  });
+
+  handle(IpcChannels.ghIssueOpenInBrowser, async (repoId: number, issueNumber: number) => {
+    const repo = mustRepo(repoId);
+    if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
+    await shell.openExternal(`https://github.com/${repo.github_owner}/${repo.github_repo}/issues/${issueNumber}`);
+    return true;
   });
 
   // System
