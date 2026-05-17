@@ -47,45 +47,45 @@
 
 .dark {
   /* Surfaces */
-  --color-bg: 13 17 23;
-  --color-bg-panel: 22 27 34;
-  --color-bg-subtle: 28 33 40;
-  --color-bg-muted: 26 31 38;
-  --color-bg-hover: 33 38 45;
+  --color-bg: 10 10 10;
+  --color-bg-panel: 20 20 20;
+  --color-bg-subtle: 32 32 32;
+  --color-bg-muted: 26 26 26;
+  --color-bg-hover: 38 38 38;
 
   /* Borders */
-  --color-border: 48 54 61;
-  --color-border-subtle: 33 38 45;
-  --color-border-strong: 68 76 86;
+  --color-border: 45 45 45;
+  --color-border-subtle: 32 32 32;
+  --color-border-strong: 64 64 64;
 
   /* Text */
-  --color-text-primary: 230 237 243;
-  --color-text-secondary: 201 209 217;
-  --color-text-muted: 139 148 158;
+  --color-text-primary: 237 237 237;
+  --color-text-secondary: 200 200 200;
+  --color-text-muted: 150 150 150;
 
   /* Brand + semantic */
-  --color-accent: 88 166 255;
-  --color-accent-hover: 121 184 255;
-  --color-success: 63 185 80;
-  --color-warn: 210 153 34;
-  --color-danger: 248 81 73;
+  --color-accent: 96 165 250;
+  --color-accent-hover: 130 185 255;
+  --color-success: 74 222 128;
+  --color-warn: 250 204 21;
+  --color-danger: 248 113 113;
 
   /* Shadows */
-  --shadow-raised: rgba(0, 0, 0, 0.55);
-  --shadow-card: rgba(0, 0, 0, 0.35);
+  --shadow-raised: rgba(0, 0, 0, 0.7);
+  --shadow-card: rgba(0, 0, 0, 0.5);
 
   /* Diff helpers */
-  --scrollbar-thumb: rgba(230, 237, 243, 0.18);
-  --scrollbar-thumb-hover: rgba(230, 237, 243, 0.32);
-  --diff-row-border: rgba(48, 54, 61, 0.6);
-  --diff-gutter-border: rgba(48, 54, 61, 0.85);
-  --diff-add-bg: rgba(63, 185, 80, 0.14);
-  --diff-del-bg: rgba(248, 81, 73, 0.14);
-  --diff-selected-bg: rgba(88, 166, 255, 0.16);
-  --diff-comment-bg: rgba(88, 166, 255, 0.10);
-  --diff-empty-stripe: rgba(230, 237, 243, 0.04);
-  --diff-gutter-context: 110 118 129;
-  --diff-hunk-bg: 22 27 34;
+  --scrollbar-thumb: rgba(237, 237, 237, 0.16);
+  --scrollbar-thumb-hover: rgba(237, 237, 237, 0.30);
+  --diff-row-border: rgba(45, 45, 45, 0.7);
+  --diff-gutter-border: rgba(45, 45, 45, 0.9);
+  --diff-add-bg: rgba(74, 222, 128, 0.10);
+  --diff-del-bg: rgba(248, 113, 113, 0.10);
+  --diff-selected-bg: rgba(96, 165, 250, 0.14);
+  --diff-comment-bg: rgba(96, 165, 250, 0.08);
+  --diff-empty-stripe: rgba(237, 237, 237, 0.035);
+  --diff-gutter-context: 115 115 115;
+  --diff-hunk-bg: 20 20 20;
 }
 
 html, body, #root {
