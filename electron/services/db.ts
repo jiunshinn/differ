@@ -103,6 +103,27 @@ function applyMigrations(d: Database.Database): void {
       value TEXT NOT NULL
     );
   `);
+
+  ensureColumn(d, 'repositories', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(d, 'repositories', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  // Seed sort_order for existing rows so they keep a stable order matching last_opened_at.
+  const seeded = d
+    .prepare(`SELECT COUNT(*) AS n FROM repositories WHERE sort_order != 0`)
+    .get() as { n: number };
+  if (seeded.n === 0) {
+    const rows = d
+      .prepare(`SELECT id FROM repositories ORDER BY last_opened_at DESC`)
+      .all() as { id: number }[];
+    const update = d.prepare(`UPDATE repositories SET sort_order = ? WHERE id = ?`);
+    rows.forEach((r, i) => update.run(i + 1, r.id));
+  }
+}
+
+function ensureColumn(d: Database.Database, table: string, column: string, decl: string): void {
+  const cols = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  }
 }
 
 export function setSetting(key: string, value: string): void {

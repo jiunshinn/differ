@@ -10,6 +10,8 @@ export interface Repository {
   github_repo: string | null;
   created_at: string;
   last_opened_at: string;
+  pinned: number;
+  sort_order: number;
 }
 
 export type ReviewSessionKind = 'local' | 'pull_request';
@@ -249,6 +251,8 @@ export const IpcChannels = {
   repoPick: 'repo:pick',
   repoRecent: 'repo:recent',
   repoRemove: 'repo:remove',
+  repoSetPinned: 'repo:setPinned',
+  repoReorder: 'repo:reorder',
   repoStatus: 'repo:status',
   repoBranches: 'repo:branches',
   repoCommits: 'repo:commits',

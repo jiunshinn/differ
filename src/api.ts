@@ -27,6 +27,8 @@ export interface DifferApi {
   openRepo: (path: string) => Promise<Repository>;
   recentRepos: () => Promise<Repository[]>;
   removeRecent: (id: number) => Promise<boolean>;
+  setRepoPinned: (id: number, pinned: boolean) => Promise<Repository | null>;
+  reorderRepos: (orderedIds: number[]) => Promise<boolean>;
   status: (repoId: number) => Promise<RepoStatus>;
   branches: (repoId: number) => Promise<BranchInfo[]>;
   commits: (repoId: number, limit?: number) => Promise<CommitSummary[]>;

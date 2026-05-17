@@ -28,6 +28,8 @@ import {
   getRepositoryById,
   listRecentRepositories,
   removeRepository,
+  reorderRepositories,
+  setRepositoryPinned,
   upsertRepository,
 } from './services/repoStore';
 import { ensureLocalSession, ensurePrSession, getSession } from './services/sessionStore';
@@ -82,6 +84,13 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IpcChannels.repoRecent, async () => listRecentRepositories());
   handle(IpcChannels.repoRemove, async (id: number) => {
     removeRepository(id);
+    return true;
+  });
+  handle(IpcChannels.repoSetPinned, async (id: number, pinned: boolean) =>
+    setRepositoryPinned(id, pinned),
+  );
+  handle(IpcChannels.repoReorder, async (orderedIds: number[]) => {
+    reorderRepositories(orderedIds);
     return true;
   });
 
