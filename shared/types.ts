@@ -173,10 +173,13 @@ export interface BranchInfo {
 
 // GitHub wire types
 
+export type GithubPullRequestState = 'open' | 'closed' | 'merged';
+export type GithubPullRequestStateFilter = GithubPullRequestState | 'all';
+
 export interface GithubPullRequestSummary {
   number: number;
   title: string;
-  state: 'open' | 'closed' | 'merged';
+  state: GithubPullRequestState;
   isDraft: boolean;
   author: string;
   headRef: string;

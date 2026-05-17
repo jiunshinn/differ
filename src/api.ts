@@ -22,6 +22,7 @@ import type {
   GithubOAuthPollResult,
   GithubOwnerRef,
   GithubPullRequestDetail,
+  GithubPullRequestStateFilter,
   GithubPullRequestSummary,
   GithubRepoSummary,
   GithubSubmitReviewInput,
@@ -130,7 +131,7 @@ export interface DifferApi {
   ghListMyRepos: () => Promise<GithubRepoSummary[]>;
   ghListMyOrgs: () => Promise<GithubOwnerRef[]>;
   ghListOrgRepos: (org: string) => Promise<GithubRepoSummary[]>;
-  ghPrList: (repoId: number) => Promise<GithubPullRequestSummary[]>;
+  ghPrList: (repoId: number, state?: GithubPullRequestStateFilter) => Promise<GithubPullRequestSummary[]>;
   ghPrDetail: (repoId: number, prNumber: number) => Promise<GithubPullRequestDetail>;
   ghPrCheckout: (repoId: number, prNumber: number) => Promise<ReviewSession>;
   ghPrSubmitReview: (repoId: number, input: GithubSubmitReviewInput) => Promise<boolean>;

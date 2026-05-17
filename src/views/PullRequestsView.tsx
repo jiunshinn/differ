@@ -1,9 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
-import type { GithubAuthState, GithubPullRequestSummary } from '@shared/types';
+import type {
+  GithubAuthState,
+  GithubPullRequestState,
+  GithubPullRequestStateFilter,
+  GithubPullRequestSummary,
+} from '@shared/types';
 import { cn } from '../utils/cn';
+
+const FILTERS: { id: GithubPullRequestStateFilter; label: string }[] = [
+  { id: 'open', label: 'Open' },
+  { id: 'closed', label: 'Closed' },
+  { id: 'merged', label: 'Merged' },
+  { id: 'all', label: 'All' },
+];
 
 export default function PullRequestsView() {
   const { state, dispatch, toast } = useApp();
@@ -11,17 +23,18 @@ export default function PullRequestsView() {
   const [auth, setAuth] = useState<GithubAuthState | null>(null);
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState<number | null>(null);
+  const [filter, setFilter] = useState<GithubPullRequestStateFilter>('open');
 
   const repo = state.repo;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!repo) return;
     setLoading(true);
     try {
       const a = await api.ghAuthStatus();
       setAuth(a);
       if (a.authenticated && repo.github_owner && repo.github_repo) {
-        const list = await api.ghPrList(repo.id);
+        const list = await api.ghPrList(repo.id, filter);
         setPrs(list);
       } else {
         setPrs([]);
@@ -31,11 +44,11 @@ export default function PullRequestsView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, repo, toast]);
+
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo?.id]);
+  }, [load]);
 
   if (!repo) return null;
 
@@ -66,9 +79,27 @@ export default function PullRequestsView() {
                 : 'No GitHub remote detected'}
             </p>
           </div>
-          <button className="btn" onClick={() => void load()} disabled={loading}>
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex bg-bg-panel border border-border rounded-lg p-[3px] gap-1">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.id}
+                  className={cn(
+                    'h-7 px-2.5 rounded-md text-xs font-medium',
+                    filter === item.id
+                      ? 'bg-bg-subtle text-text-primary border border-border'
+                      : 'text-text-muted hover:text-text-primary',
+                  )}
+                  onClick={() => setFilter(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <button className="btn" onClick={() => void load()} disabled={loading}>
+              Refresh
+            </button>
+          </div>
         </header>
 
         {!repo.github_owner || !repo.github_repo ? (
@@ -86,7 +117,9 @@ export default function PullRequestsView() {
           <div className="panel-card overflow-hidden">
             {loading && <div className="px-4 py-3 text-text-muted text-sm">Loading…</div>}
             {!loading && prs.length === 0 && (
-              <div className="px-4 py-3 text-text-muted text-sm">No open pull requests.</div>
+              <div className="px-4 py-3 text-text-muted text-sm">
+                No {filter === 'all' ? '' : `${filter} `}pull requests.
+              </div>
             )}
             <ul>
               {prs.map((pr) => {
@@ -108,6 +141,7 @@ export default function PullRequestsView() {
                       <span className={cn('chip', pr.isDraft && 'text-text-muted')}>
                         #{pr.number}
                       </span>
+                      <PrStateChip state={pr.state} isDraft={pr.isDraft} />
                       <span className="text-sm font-medium truncate flex-1">{pr.title}</span>
                       <span className="small-mono">{pr.author}</span>
                       <span className="small-mono">
@@ -128,5 +162,21 @@ export default function PullRequestsView() {
         )}
       </section>
     </div>
+  );
+}
+
+function PrStateChip({ state, isDraft }: { state: GithubPullRequestState; isDraft: boolean }) {
+  const label = isDraft && state === 'open' ? 'draft' : state;
+  return (
+    <span
+      className={cn(
+        'tag capitalize',
+        state === 'open' && 'text-success',
+        state === 'closed' && 'text-danger',
+        state === 'merged' && 'text-accent',
+      )}
+    >
+      {label}
+    </span>
   );
 }

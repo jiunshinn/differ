@@ -74,6 +74,7 @@ import type {
   CloneRequest,
   ContextExtractionInput,
   GithubIssueStateFilter,
+  GithubPullRequestStateFilter,
   GithubSubmitReviewInput,
 } from '../shared/types';
 
@@ -373,10 +374,10 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IpcChannels.ghListMyOrgs, async () => listMyOrgs());
   handle(IpcChannels.ghListOrgRepos, async (org: string) => listOrgRepos(org));
 
-  handle(IpcChannels.ghPrList, async (repoId: number) => {
+  handle(IpcChannels.ghPrList, async (repoId: number, state?: GithubPullRequestStateFilter) => {
     const repo = mustRepo(repoId);
     if (!repo.github_owner || !repo.github_repo) throw new Error('Repository is not connected to GitHub');
-    return listPullRequests(repo.github_owner, repo.github_repo);
+    return listPullRequests(repo.github_owner, repo.github_repo, state ?? 'open');
   });
 
   handle(IpcChannels.ghPrDetail, async (repoId: number, prNumber: number) => {

@@ -11,6 +11,7 @@ import type {
   GithubIssueUserRef,
   GithubOwnerRef,
   GithubPullRequestDetail,
+  GithubPullRequestStateFilter,
   GithubPullRequestSummary,
   GithubRepoSummary,
   GithubSubmitReviewInput,
@@ -93,13 +94,50 @@ export async function getAuthStatus(force = false): Promise<GithubAuthState> {
   }
 }
 
-export async function listPullRequests(owner: string, repo: string): Promise<GithubPullRequestSummary[]> {
+export async function listPullRequests(
+  owner: string,
+  repo: string,
+  state: GithubPullRequestStateFilter = 'open',
+): Promise<GithubPullRequestSummary[]> {
   const client = mustClient();
-  const res = await client.pulls.list({ owner, repo, state: 'open', per_page: 50, sort: 'updated', direction: 'desc' });
-  return res.data.map((pr) => ({
+  const apiState = state === 'merged' ? 'closed' : state;
+  const results: GithubPullRequestSummary[] = [];
+
+  for (let page = 1; page <= 5; page += 1) {
+    const res = await client.pulls.list({
+      owner,
+      repo,
+      state: apiState,
+      per_page: 100,
+      page,
+      sort: 'updated',
+      direction: 'desc',
+    });
+
+    for (const raw of res.data) {
+      const pr = mapPullRequestSummary(raw);
+      if (state === 'all' || pr.state === state) {
+        results.push(pr);
+      }
+      if (results.length >= 50) break;
+    }
+
+    if (results.length >= 50 || res.data.length < 100) break;
+  }
+
+  return results;
+}
+
+type OctokitPullRequest = Awaited<ReturnType<Octokit['pulls']['list']>>['data'][number];
+
+function mapPullRequestSummary(pr: OctokitPullRequest): GithubPullRequestSummary {
+  const prState: GithubPullRequestSummary['state'] = pr.merged_at
+    ? 'merged'
+    : (pr.state as 'open' | 'closed');
+  return {
     number: pr.number,
     title: pr.title,
-    state: pr.merged_at ? 'merged' : (pr.state as 'open' | 'closed'),
+    state: prState,
     isDraft: !!pr.draft,
     author: pr.user?.login ?? 'unknown',
     headRef: pr.head.ref,
@@ -109,7 +147,7 @@ export async function listPullRequests(owner: string, repo: string): Promise<Git
     url: pr.html_url,
     updatedAt: pr.updated_at,
     reviewDecision: null,
-  }));
+  };
 }
 
 export async function getPullRequestDetail(
