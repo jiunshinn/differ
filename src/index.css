@@ -214,8 +214,6 @@ input, textarea, [contenteditable='true'] {
 }
 .diff-line .body {
   padding: 2px 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: pre;
   color: rgb(var(--color-text-primary));
 }
