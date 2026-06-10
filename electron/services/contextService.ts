@@ -32,11 +32,14 @@ export async function previewContext(input: ContextExtractionInput): Promise<Con
     if (c.target_kind !== 'file') fileSet.add(c.file_path);
   }
 
-  // Build a map of FileDiff per path. We always read both staged and unstaged
-  // for local sessions and unify them, because the user may want either side.
+  // Build a map of FileDiff per path.
   const fileDiffs = new Map<string, FileDiff>();
   for (const filePath of fileSet) {
-    const merged = await collectFileDiff(repo.path, filePath, session.kind === 'local');
+    const merged = await collectFileDiff(repo.path, filePath, {
+      isLocal: session.kind === 'local',
+      base: session.base_sha,
+      head: session.head_sha,
+    });
     if (merged) fileDiffs.set(filePath, merged);
   }
 
@@ -63,12 +66,22 @@ export async function previewContext(input: ContextExtractionInput): Promise<Con
 async function collectFileDiff(
   repoPath: string,
   filePath: string,
-  isLocal: boolean,
+  refs: { isLocal: boolean; base: string | null; head: string | null },
 ): Promise<FileDiff | null> {
+  if (!refs.isLocal && refs.base && refs.head) {
+    const prDiff = await getDiff(repoPath, {
+      filePath,
+      base: refs.base,
+      head: refs.head,
+      ignoreWhitespace: false,
+    });
+    if (prDiff[0]) return prDiff[0];
+  }
+
   // Try unstaged + untracked first.
   const unstaged = await getDiff(repoPath, {
     filePath,
-    includeUntracked: isLocal,
+    includeUntracked: refs.isLocal,
     ignoreWhitespace: false,
   });
   if (unstaged[0]) return unstaged[0];
