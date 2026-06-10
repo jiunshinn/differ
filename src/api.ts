@@ -6,8 +6,6 @@ import type {
   CommentLabel,
   CommentTargetKind,
   CommitSummary,
-  ContextExtractionInput,
-  ContextExtractionResult,
   FileContent,
   FileDiff,
   FileReviewState,
@@ -106,21 +104,6 @@ export interface DifferApi {
 
   getFileStates: (sessionId: number) => Promise<FileReviewState[]>;
   setFileState: (sessionId: number, filePath: string, status: FileReviewStatus) => Promise<FileReviewState>;
-
-  previewContext: (input: ContextExtractionInput) => Promise<ContextExtractionResult>;
-  saveContext: (input: {
-    sessionId: number;
-    title: string;
-    task: string;
-    output: string;
-    included: {
-      comments: number[];
-      files: string[];
-      hunks: { filePath: string; hunkHeader: string }[];
-      lineRanges?: { filePath: string; startLine: number; endLine: number }[];
-    };
-  }) => Promise<unknown>;
-  copyContext: (markdown: string) => Promise<boolean>;
 
   ghAuthList: () => Promise<GithubAuthState>;
   ghAuthAddToken: (token: string) => Promise<GithubAccount>;

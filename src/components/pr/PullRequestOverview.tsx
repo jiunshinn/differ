@@ -104,14 +104,12 @@ export function PrSummaryPanel({
   checks,
   commentCount,
   onSubmit,
-  onBuildContext,
 }: {
   detail: GithubPullRequestDetail;
   diffs: FileDiff[];
   checks: GithubCheckRun[];
   commentCount: number;
   onSubmit: () => void;
-  onBuildContext: () => void;
 }) {
   const passed = checks.filter((check) => check.conclusion === 'success').length;
   const failed = checks.filter(
@@ -147,9 +145,6 @@ export function PrSummaryPanel({
         <div className="p-3 grid gap-2">
           <button className="btn-primary h-8" onClick={onSubmit}>
             Submit review
-          </button>
-          <button className="btn h-8" onClick={onBuildContext}>
-            Build AI context
           </button>
         </div>
       </section>

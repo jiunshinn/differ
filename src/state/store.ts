@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import type { Repository, ReviewSession } from '@shared/types';
 
-export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'context' | 'history' | 'code';
-export type RightPanelTab = 'overview' | 'comments' | 'context';
+export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'history' | 'code';
+export type RightPanelTab = 'overview' | 'comments';
 export type HistoryTab = 'graph' | 'resolve' | 'sync';
 
 export type ActivityKind =
@@ -14,9 +14,7 @@ export type ActivityKind =
   | 'commit'
   | 'pull'
   | 'push'
-  | 'fetch'
-  | 'context_copied'
-  | 'context_extracted';
+  | 'fetch';
 
 export interface ActivityEvent {
   id: number;
@@ -24,16 +22,6 @@ export interface ActivityEvent {
   message: string;
   detail?: string;
   at: number;
-}
-
-export interface LineRangeSelection {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-}
-
-export function lineRangeKey(r: LineRangeSelection): string {
-  return `${r.filePath}::${r.startLine}-${r.endLine}`;
 }
 
 export interface ToastState {
@@ -77,18 +65,6 @@ interface DiffSlice {
   setIgnoreWhitespace: (value: boolean) => void;
 }
 
-interface SelectionSlice {
-  selectedCommentIds: number[];
-  selectedFilePaths: string[];
-  selectedHunkKeys: string[];
-  selectedLineRanges: LineRangeSelection[];
-  toggleCommentSelection: (id: number, on?: boolean) => void;
-  toggleFileSelection: (path: string, on?: boolean) => void;
-  toggleHunkSelection: (key: string, on?: boolean) => void;
-  toggleLineRangeSelection: (range: LineRangeSelection, on?: boolean) => void;
-  clearSelections: () => void;
-}
-
 interface ActivitySlice {
   activity: ActivityEvent[];
   pushActivity: (event: Omit<ActivityEvent, 'id' | 'at'> & { at?: number }) => void;
@@ -103,20 +79,12 @@ interface ToastSlice {
 export type AppClientStore = ViewSlice &
   RepoSlice &
   DiffSlice &
-  SelectionSlice &
   ActivitySlice &
   ToastSlice;
 
 const ACTIVITY_MAX = 30;
 let activityIdSeq = 1;
 let toastIdSeq = 1;
-
-function toggleInArray<T>(items: T[], item: T, on?: boolean): T[] {
-  const has = items.includes(item);
-  const shouldInclude = on ?? !has;
-  if (shouldInclude) return has ? items : [...items, item];
-  return items.filter((x) => x !== item);
-}
 
 export const useAppStore = create<AppClientStore>()((set, get) => ({
   view: 'picker',
@@ -131,10 +99,6 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
   rightPanelTab: 'overview',
   historyTab: 'graph',
   fileFilter: '',
-  selectedCommentIds: [],
-  selectedFilePaths: [],
-  selectedHunkKeys: [],
-  selectedLineRanges: [],
   activity: [],
   toast: null,
   lastFetchedAt: null,
@@ -146,10 +110,6 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
       session: null,
       selectedFile: null,
       prNumber: null,
-      selectedCommentIds: [],
-      selectedFilePaths: [],
-      selectedHunkKeys: [],
-      selectedLineRanges: [],
       lastFetchedAt: null,
     }),
   setSession: (session) => set({ session }),
@@ -163,33 +123,6 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
   setHistoryTab: (historyTab) => set({ historyTab }),
   setFileFilter: (fileFilter) => set({ fileFilter }),
   setLastFetchedAt: (lastFetchedAt) => set({ lastFetchedAt }),
-
-  toggleCommentSelection: (id, on) =>
-    set((state) => ({ selectedCommentIds: toggleInArray(state.selectedCommentIds, id, on) })),
-  toggleFileSelection: (path, on) =>
-    set((state) => ({ selectedFilePaths: toggleInArray(state.selectedFilePaths, path, on) })),
-  toggleHunkSelection: (key, on) =>
-    set((state) => ({ selectedHunkKeys: toggleInArray(state.selectedHunkKeys, key, on) })),
-  toggleLineRangeSelection: (range, on) =>
-    set((state) => {
-      const key = lineRangeKey(range);
-      const has = state.selectedLineRanges.some((r) => lineRangeKey(r) === key);
-      const shouldInclude = on ?? !has;
-      return {
-        selectedLineRanges: shouldInclude
-          ? has
-            ? state.selectedLineRanges
-            : [...state.selectedLineRanges, range]
-          : state.selectedLineRanges.filter((r) => lineRangeKey(r) !== key),
-      };
-    }),
-  clearSelections: () =>
-    set({
-      selectedCommentIds: [],
-      selectedFilePaths: [],
-      selectedHunkKeys: [],
-      selectedLineRanges: [],
-    }),
 
   pushActivity: (event) =>
     set((state) => {
@@ -230,12 +163,6 @@ export const appSelectors = {
     diffFullscreen: state.diffFullscreen,
     ignoreWhitespace: state.ignoreWhitespace,
   }),
-  selections: (state: AppClientStore) => ({
-    selectedCommentIds: state.selectedCommentIds,
-    selectedFilePaths: state.selectedFilePaths,
-    selectedHunkKeys: state.selectedHunkKeys,
-    selectedLineRanges: state.selectedLineRanges,
-  }),
   toast: (state: AppClientStore) => state.toast,
   actions: (state: AppClientStore) => ({
     setView: state.setView,
@@ -251,11 +178,6 @@ export const appSelectors = {
     setHistoryTab: state.setHistoryTab,
     setFileFilter: state.setFileFilter,
     setLastFetchedAt: state.setLastFetchedAt,
-    toggleCommentSelection: state.toggleCommentSelection,
-    toggleFileSelection: state.toggleFileSelection,
-    toggleHunkSelection: state.toggleHunkSelection,
-    toggleLineRangeSelection: state.toggleLineRangeSelection,
-    clearSelections: state.clearSelections,
     pushActivity: state.pushActivity,
     showToast: state.showToast,
   }),

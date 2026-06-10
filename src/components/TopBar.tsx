@@ -422,8 +422,8 @@ function ViewSwitch({
   view,
   onChange,
 }: {
-  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'context' | 'history' | 'code';
-  onChange: (v: 'local' | 'pr-list' | 'issues' | 'context' | 'history' | 'code') => void;
+  view: 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'history' | 'code';
+  onChange: (v: 'local' | 'pr-list' | 'issues' | 'history' | 'code') => void;
 }) {
   const tabs = [
     { id: 'local' as const, label: 'Local' },
@@ -431,7 +431,6 @@ function ViewSwitch({
     { id: 'history' as const, label: 'History' },
     { id: 'pr-list' as const, label: 'Pull requests' },
     { id: 'issues' as const, label: 'Issues' },
-    { id: 'context' as const, label: 'Context' },
   ];
   return (
     <div className="inline-flex bg-bg border border-border rounded-lg p-[3px] gap-1">

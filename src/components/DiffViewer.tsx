@@ -100,7 +100,6 @@ export default function DiffViewer() {
       else if (l.kind === 'del') removed++;
     }
   }
-  const selectedHunkCount = state.selectedHunkKeys.filter((k) => k.startsWith(`${selected}::`)).length;
   const baseName = selected.split('/').pop() ?? selected;
   const dirName = selected.includes('/') ? selected.slice(0, selected.lastIndexOf('/')) : '';
 
@@ -167,7 +166,7 @@ export default function DiffViewer() {
         <SummaryTile value={`+${added}`} label="Added lines" tone="success" />
         <SummaryTile value={`−${removed}`} label="Removed lines" tone="danger" />
         <SummaryTile value={openComments} label="Open comments" tone={openComments ? 'warn' : 'neutral'} />
-        <SummaryTile value={selectedHunkCount} label="Selected hunks" tone={selectedHunkCount ? 'accent' : 'neutral'} />
+        <SummaryTile value={diff.hunks.length} label="Hunks" tone="neutral" />
       </div>
 
       <div className="px-4 pb-4 grid grid-cols-[minmax(0,1fr)] gap-3.5">
@@ -288,21 +287,13 @@ function HunkBlock({
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
   onAddHunkComment: () => void;
 }) {
-  const { state, dispatch } = useApp();
-  const hunkKey = `${file.filePath}::${hunk.header}`;
-  const selected = state.selectedHunkKeys.includes(hunkKey);
   const hunkComments = comments.filter((c) => c.target_kind === 'hunk' && c.hunk_header === hunk.header);
   return (
     <article className="panel-card">
       <div className="hunk-header">
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => dispatch({ type: 'toggleHunkSelection', key: hunkKey })}
-          />
+        <div className="flex items-center gap-2 min-w-0">
           <span className="font-mono truncate">{hunk.header}</span>
-        </label>
+        </div>
         <div className="flex items-center gap-1">
           <button className="btn-ghost text-xs h-7 px-2" onClick={onAddHunkComment}>
             Comment hunk
@@ -563,8 +554,7 @@ function SideCell({
 }
 
 function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent: 'line' | 'hunk' }) {
-  const { state, dispatch, toast, logActivity } = useApp();
-  const isSelected = state.selectedCommentIds.includes(comment.id);
+  const { state, toast, logActivity } = useApp();
   const updateComment = useUpdateCommentMutation(state.session?.id ?? null);
 
   const resolve = async () => {
@@ -583,22 +573,6 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
     }
   };
 
-  const extract = () => {
-    dispatch({ type: 'toggleCommentSelection', id: comment.id, on: true });
-    dispatch({ type: 'setRightPanelTab', tab: 'context' });
-    if (comment.hunk_header) {
-      dispatch({
-        type: 'toggleHunkSelection',
-        key: `${comment.file_path}::${comment.hunk_header}`,
-        on: true,
-      });
-    } else if (comment.target_kind === 'file') {
-      dispatch({ type: 'toggleFileSelection', path: comment.file_path, on: true });
-    }
-    logActivity({ kind: 'context_extracted', message: 'Added comment to context', detail: comment.file_path });
-    toast('success', 'Selected comment context extracted');
-  };
-
   return (
     <div
       className={cn(
@@ -606,7 +580,7 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
         indent === 'hunk' && 'grid-cols-[44px_1fr]',
       )}
     >
-      <div className={cn('border-r border-border', isSelected ? 'bg-accent-soft' : 'bg-bg-subtle')} />
+      <div className="border-r border-border bg-bg-subtle" />
       <article className="m-2.5 border border-accent rounded-card overflow-hidden bg-bg-panel">
         <header className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border">
           <div className="flex items-center gap-2 font-semibold text-sm">
@@ -635,17 +609,8 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
         <div className="px-3 py-3">
           <p className="m-0 whitespace-pre-wrap max-w-[72ch]">{comment.body}</p>
           <div className="mt-2.5 flex items-center gap-2">
-            <button className="btn-primary h-8" onClick={extract}>
-              Extract context
-            </button>
             <button className="btn h-8" onClick={() => void resolve()}>
               {comment.status === 'open' ? 'Resolve' : 'Reopen'}
-            </button>
-            <button
-              className="btn h-8"
-              onClick={() => dispatch({ type: 'toggleCommentSelection', id: comment.id })}
-            >
-              {isSelected ? 'Deselect' : 'Select'}
             </button>
           </div>
         </div>

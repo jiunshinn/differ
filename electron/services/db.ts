@@ -86,18 +86,6 @@ function applyMigrations(d: Database.Database): void {
       UNIQUE (review_session_id, file_path)
     );
 
-    CREATE TABLE IF NOT EXISTS context_bundles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      review_session_id INTEGER NOT NULL REFERENCES review_sessions(id) ON DELETE CASCADE,
-      title TEXT NOT NULL DEFAULT '',
-      task TEXT NOT NULL DEFAULT '',
-      included_comments_json TEXT NOT NULL DEFAULT '[]',
-      included_files_json TEXT NOT NULL DEFAULT '[]',
-      included_hunks_json TEXT NOT NULL DEFAULT '[]',
-      output_markdown TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL

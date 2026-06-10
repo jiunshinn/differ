@@ -1,5 +1,4 @@
 import type {
-  ContextExtractionInput,
   GithubIssueStateFilter,
   GithubPullRequestStateFilter,
 } from '@shared/types';
@@ -22,24 +21,6 @@ function normalizeDiffOptions(opts: DiffQueryOptions) {
   };
 }
 
-function normalizeContextInput(input: ContextExtractionInput) {
-  return {
-    sessionId: input.sessionId,
-    task: input.task,
-    testCommand: input.testCommand ?? null,
-    includeRepoMetadata: input.includeRepoMetadata,
-    includeFullFiles: input.includeFullFiles,
-    commentIds: [...input.commentIds].sort((a, b) => a - b),
-    filePaths: [...input.filePaths].sort(),
-    hunks: [...input.hunks].sort((a, b) =>
-      `${a.filePath}::${a.hunkHeader}`.localeCompare(`${b.filePath}::${b.hunkHeader}`),
-    ),
-    lineRanges: [...(input.lineRanges ?? [])].sort((a, b) =>
-      `${a.filePath}::${a.startLine}-${a.endLine}`.localeCompare(`${b.filePath}::${b.startLine}-${b.endLine}`),
-    ),
-  };
-}
-
 export const queryKeys = {
   all: ['differ'] as const,
   repo: {
@@ -58,8 +39,6 @@ export const queryKeys = {
     detail: (sessionId: number) => [...queryKeys.session.all(), sessionId] as const,
     comments: (sessionId: number) => [...queryKeys.session.detail(sessionId), 'comments'] as const,
     fileStates: (sessionId: number) => [...queryKeys.session.detail(sessionId), 'file-states'] as const,
-    contextPreview: (input: ContextExtractionInput) =>
-      [...queryKeys.session.detail(input.sessionId), 'context-preview', normalizeContextInput(input)] as const,
   },
   diff: {
     all: () => [...queryKeys.all, 'diff'] as const,

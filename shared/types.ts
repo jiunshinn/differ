@@ -33,7 +33,7 @@ export interface ReviewSession {
 export type CommentTargetKind = 'file' | 'line' | 'hunk';
 export type CommentDiffSide = 'old' | 'new' | 'none';
 export type CommentStatus = 'open' | 'resolved';
-export type CommentLabel = 'issue' | 'question' | 'refactor' | 'test' | 'ask-ai' | null;
+export type CommentLabel = 'issue' | 'question' | 'refactor' | 'test' | null;
 
 export interface ReviewComment {
   id: number;
@@ -58,18 +58,6 @@ export interface FileReviewState {
   file_path: string;
   status: FileReviewStatus;
   updated_at: string;
-}
-
-export interface ContextBundle {
-  id: number;
-  review_session_id: number;
-  title: string;
-  task: string;
-  included_comments_json: string;
-  included_files_json: string;
-  included_hunks_json: string;
-  output_markdown: string;
-  created_at: string;
 }
 
 // Git wire types
@@ -285,32 +273,6 @@ export interface GithubSubmitReviewInput {
   comments: GithubReviewCommentInput[];
 }
 
-// Context extraction
-
-export interface LineRangeRef {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-}
-
-export interface ContextExtractionInput {
-  sessionId: number;
-  task: string;
-  testCommand?: string;
-  includeRepoMetadata: boolean;
-  includeFullFiles: boolean;
-  commentIds: number[];
-  filePaths: string[];
-  // Specific hunks identified by file + hunk header.
-  hunks: { filePath: string; hunkHeader: string }[];
-  // Arbitrary line ranges of working-tree files (not tied to a diff).
-  lineRanges?: LineRangeRef[];
-}
-
-export interface ContextExtractionResult {
-  markdown: string;
-}
-
 // Auth
 
 export interface GithubAccount {
@@ -447,11 +409,6 @@ export const IpcChannels = {
   fileStateGet: 'fileState:get',
   fileStateSet: 'fileState:set',
   fileStateList: 'fileState:list',
-
-  // Context bundle
-  contextPreview: 'context:preview',
-  contextSave: 'context:save',
-  contextCopy: 'context:copy',
 
   // GitHub
   ghAuthList: 'gh:authList',

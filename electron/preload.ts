@@ -67,11 +67,6 @@ const api = {
   setFileState: (sessionId: number, filePath: string, status: string) =>
     invoke(IpcChannels.fileStateSet, sessionId, filePath, status),
 
-  // Context
-  previewContext: (input: unknown) => invoke(IpcChannels.contextPreview, input),
-  saveContext: (input: unknown) => invoke(IpcChannels.contextSave, input),
-  copyContext: (markdown: string) => invoke(IpcChannels.contextCopy, markdown),
-
   // GitHub
   ghAuthList: () => invoke(IpcChannels.ghAuthList),
   ghAuthAddToken: (token: string) => invoke(IpcChannels.ghAuthAddToken, token),

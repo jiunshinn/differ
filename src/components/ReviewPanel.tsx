@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { lineRangeKey, useApp, type ActivityEvent, type ActivityKind, type RightPanelTab } from '../state/AppStore';
+import { useApp, type ActivityEvent, type ActivityKind } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import {
-  useContextPreviewQuery,
   useDeleteCommentMutation,
   useGithubPullRequestChecksQuery,
   useUpdateCommentMutation,
 } from '../query/hooks';
-import { useDebouncedValue } from '../utils/useDebouncedValue';
 import type { CommentLabel, GithubCheckRun, ReviewComment } from '@shared/types';
 
 export default function ReviewPanel() {
@@ -56,21 +54,11 @@ export default function ReviewPanel() {
           Comments
           <span className="ml-1 text-text-muted">{state.comments.length}</span>
         </TabButton>
-        <TabButton active={tab === 'context'} onClick={() => dispatch({ type: 'setRightPanelTab', tab: 'context' })}>
-          Context
-          <span className="ml-1 text-text-muted">
-            {state.selectedCommentIds.length +
-              state.selectedHunkKeys.length +
-              state.selectedFilePaths.length +
-              state.selectedLineRanges.length}
-          </span>
-        </TabButton>
       </div>
 
       <div className="min-h-0 overflow-auto px-3.5 py-3 grid gap-3.5 content-start">
         {tab === 'overview' && <OverviewTab />}
         {tab === 'comments' && <CommentsTab />}
-        {tab === 'context' && <ContextTab />}
       </div>
     </aside>
   );
@@ -300,10 +288,6 @@ function kindInitials(kind: ActivityKind): string {
       return 'G↑';
     case 'fetch':
       return 'GF';
-    case 'context_copied':
-      return 'CX';
-    case 'context_extracted':
-      return 'EX';
     default:
       return '·';
   }
@@ -311,18 +295,16 @@ function kindInitials(kind: ActivityKind): string {
 
 function CommentsTab() {
   const { state, dispatch, toast, logActivity } = useApp();
-  const [filter, setFilter] = useState<'all' | 'open' | 'resolved' | 'ask-ai'>('all');
+  const [filter, setFilter] = useState<'all' | 'open' | 'resolved'>('all');
   const sessionId = state.session?.id ?? null;
   const deleteComment = useDeleteCommentMutation(sessionId);
   const updateComment = useUpdateCommentMutation(sessionId);
   const comments = useMemo(() => {
     if (filter === 'open') return state.comments.filter((c) => c.status === 'open');
     if (filter === 'resolved') return state.comments.filter((c) => c.status === 'resolved');
-    if (filter === 'ask-ai') return state.comments.filter((c) => c.label === 'ask-ai');
     return state.comments;
   }, [state.comments, filter]);
 
-  const onToggleSelect = (id: number) => dispatch({ type: 'toggleCommentSelection', id });
   const onDelete = async (id: number) => {
     try {
       await deleteComment.mutateAsync(id);
@@ -352,7 +334,7 @@ function CommentsTab() {
       <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border">
         <strong className="font-semibold tracking-tight">Comments</strong>
         <div className="flex gap-1">
-          {(['all', 'open', 'resolved', 'ask-ai'] as const).map((f) => (
+          {(['all', 'open', 'resolved'] as const).map((f) => (
             <button
               key={f}
               className={cn(
@@ -373,12 +355,6 @@ function CommentsTab() {
         {comments.map((c) => (
           <article key={c.id} className="border border-border rounded-card p-2.5">
             <div className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={state.selectedCommentIds.includes(c.id)}
-                onChange={() => onToggleSelect(c.id)}
-              />
               <div className="flex-1 min-w-0">
                 <button
                   className="text-xs font-mono text-text-secondary truncate hover:text-accent text-left w-full"
@@ -439,171 +415,6 @@ function LabelChooser({ comment }: { comment: ReviewComment }) {
       <option value="question">question</option>
       <option value="refactor">refactor</option>
       <option value="test">test</option>
-      <option value="ask-ai">ask-ai</option>
     </select>
-  );
-}
-
-function ContextTab() {
-  const { state, dispatch, toast, logActivity } = useApp();
-
-  const hunks = useMemo(
-    () =>
-      state.selectedHunkKeys.map((k) => {
-        const idx = k.indexOf('::');
-        return { filePath: k.slice(0, idx), hunkHeader: k.slice(idx + 2) };
-      }),
-    [state.selectedHunkKeys],
-  );
-  const hasAny = Boolean(
-    state.selectedCommentIds.length ||
-      state.selectedFilePaths.length ||
-      state.selectedHunkKeys.length ||
-      state.selectedLineRanges.length,
-  );
-  const previewInput = useMemo(
-    () =>
-      state.session && hasAny
-        ? {
-            sessionId: state.session.id,
-            task: 'Review the selected changes and improve where appropriate.',
-            includeRepoMetadata: true,
-            includeFullFiles: false,
-            commentIds: state.selectedCommentIds,
-            filePaths: state.selectedFilePaths,
-            hunks,
-            lineRanges: state.selectedLineRanges,
-          }
-        : null,
-    [
-      hasAny,
-      hunks,
-      state.selectedCommentIds,
-      state.selectedFilePaths,
-      state.selectedLineRanges,
-      state.session,
-    ],
-  );
-  const debouncedPreviewInput = useDebouncedValue(previewInput, 300);
-  const previewQuery = useContextPreviewQuery(debouncedPreviewInput, debouncedPreviewInput !== null);
-  const preview = debouncedPreviewInput ? previewQuery.data?.markdown ?? '' : '';
-  const busy = debouncedPreviewInput !== null && previewQuery.isFetching;
-  const previewError = previewQuery.error instanceof Error ? previewQuery.error.message : null;
-
-  useEffect(() => {
-    if (previewError) toast('error', previewError);
-  }, [previewError, toast]);
-
-  const copy = async () => {
-    try {
-      await api.copyContext(preview);
-      logActivity({ kind: 'context_copied', message: 'Copied context to clipboard' });
-      toast('success', 'Context copied to clipboard');
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
-
-  const counts = `${state.selectedCommentIds.length} comments · ${state.selectedHunkKeys.length} hunks · ${state.selectedFilePaths.length} files · ${state.selectedLineRanges.length} snippets`;
-
-  return (
-    <>
-      <section className="panel-card">
-        <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border">
-          <strong className="font-semibold tracking-tight">Extracted context</strong>
-          <span className="small-mono">{counts}</span>
-        </header>
-        <pre className="m-0 p-3 max-h-[280px] overflow-auto bg-bg border-b border-border font-mono text-xs leading-[1.55] whitespace-pre-wrap text-text-primary">
-          {busy ? 'Generating…' : preview || 'Select comments, hunks, or files to build a context bundle.'}
-        </pre>
-        <div className="grid grid-cols-2 gap-2 p-3">
-          <button
-            className="btn"
-            onClick={() => dispatch({ type: 'view', view: 'context' })}
-          >
-            Open builder
-          </button>
-          <button className="btn-primary" disabled={!preview} onClick={() => void copy()}>
-            Copy markdown
-          </button>
-        </div>
-      </section>
-      <section className="panel-card">
-        <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border">
-          <strong className="font-semibold tracking-tight">Selections</strong>
-          <button className="btn-ghost h-7 text-xs px-2" onClick={() => dispatch({ type: 'clearSelections' })}>
-            Clear
-          </button>
-        </header>
-        <SelectionsList />
-      </section>
-    </>
-  );
-}
-
-function SelectionsList() {
-  const { state, dispatch } = useApp();
-  return (
-    <div className="p-3 grid gap-3">
-      <SelectionSection title={`Comments (${state.selectedCommentIds.length})`}>
-        {state.comments
-          .filter((c) => state.selectedCommentIds.includes(c.id))
-          .map((c) => (
-            <SelRow key={c.id} onClear={() => dispatch({ type: 'toggleCommentSelection', id: c.id, on: false })}>
-              <span className="font-mono">{c.file_path}</span> {c.target_kind}
-              {c.line_number ? ` L${c.line_number}` : ''}
-            </SelRow>
-          ))}
-      </SelectionSection>
-      <SelectionSection title={`Hunks (${state.selectedHunkKeys.length})`}>
-        {state.selectedHunkKeys.map((k) => (
-          <SelRow key={k} onClear={() => dispatch({ type: 'toggleHunkSelection', key: k, on: false })}>
-            <span className="font-mono">{k}</span>
-          </SelRow>
-        ))}
-      </SelectionSection>
-      <SelectionSection title={`Files (${state.selectedFilePaths.length})`}>
-        {state.selectedFilePaths.map((p) => (
-          <SelRow key={p} onClear={() => dispatch({ type: 'toggleFileSelection', path: p, on: false })}>
-            <span className="font-mono">{p}</span>
-          </SelRow>
-        ))}
-      </SelectionSection>
-      <SelectionSection title={`Snippets (${state.selectedLineRanges.length})`}>
-        {state.selectedLineRanges.map((r) => (
-          <SelRow
-            key={lineRangeKey(r)}
-            onClear={() => dispatch({ type: 'toggleLineRangeSelection', range: r, on: false })}
-          >
-            <span className="font-mono">
-              {r.filePath}:{r.startLine}-{r.endLine}
-            </span>
-          </SelRow>
-        ))}
-      </SelectionSection>
-    </div>
-  );
-}
-
-function SelectionSection({ title, children }: { title: string; children: React.ReactNode }) {
-  const isEmpty = React.Children.count(children) === 0;
-  return (
-    <div>
-      <div className="section-label mb-1.5">{title}</div>
-      <ul className="border border-border rounded-card p-1.5">
-        {isEmpty ? <li className="text-xs text-text-muted py-1 px-1.5">None.</li> : children}
-      </ul>
-    </div>
-  );
-}
-
-function SelRow({ children, onClear }: { children: React.ReactNode; onClear: () => void }) {
-  return (
-    <li className="text-xs flex items-center justify-between gap-2 py-1 px-1.5">
-      <span className="truncate flex-1">{children}</span>
-      <button className="btn-ghost h-6 w-6 p-0 text-text-muted hover:text-danger" onClick={onClear}>
-        ×
-      </button>
-    </li>
   );
 }

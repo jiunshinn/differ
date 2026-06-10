@@ -24,7 +24,7 @@ const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_CHECKS: GithubCheckRun[] = [];
 
 export default function PullRequestDetailView() {
-  const { state, dispatch, toast, logActivity } = useApp();
+  const { state, dispatch, toast } = useApp();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [tab, setTab] = useState<PrTab>('activity');
   const [composer, setComposer] = useState<null | {
@@ -84,18 +84,6 @@ export default function PullRequestDetailView() {
   if (!detail) {
     return <div className="p-6 text-text-muted">{loading ? 'Loading...' : 'No PR detail.'}</div>;
   }
-
-  const addAllFilesToContext = () => {
-    for (const diff of diffs) {
-      dispatch({ type: 'toggleFileSelection', path: diff.filePath, on: true });
-    }
-    dispatch({ type: 'view', view: 'context' });
-    logActivity({
-      kind: 'context_extracted',
-      message: 'Added review files to context',
-      detail: `PR #${detail.number}`,
-    });
-  };
 
   return (
     <>
@@ -214,7 +202,6 @@ export default function PullRequestDetailView() {
           checks={checks}
           commentCount={state.comments.length}
           onSubmit={() => setSubmitOpen(true)}
-          onBuildContext={addAllFilesToContext}
         />
       </ResizableLayout>
 
@@ -258,7 +245,7 @@ function PrFileDiff({
   onHunkComment: (hunkHeader: string) => void;
   onFileComment: () => void;
 }) {
-  const { state, dispatch } = useApp();
+  const { state } = useApp();
   const comments = state.comments.filter((c) => c.file_path === diff.filePath);
   const baseName = diff.filePath.split('/').pop() ?? diff.filePath;
   const dirName = diff.filePath.includes('/') ? diff.filePath.slice(0, diff.filePath.lastIndexOf('/')) : '';
@@ -286,24 +273,16 @@ function PrFileDiff({
         ) : diff.hunks.length === 0 ? (
           <div className="panel-card p-6 text-sm text-text-muted">No changes.</div>
         ) : (
-          diff.hunks.map((h) => {
-            const key = `${diff.filePath}::${h.header}`;
-            const selected = state.selectedHunkKeys.includes(key);
-            return (
-              <article key={h.header} className="panel-card">
-                <div className="hunk-header">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => dispatch({ type: 'toggleHunkSelection', key })}
-                    />
-                    <span className="font-mono truncate">{h.header}</span>
-                  </label>
-                  <button className="btn-ghost h-7 text-xs px-2" onClick={() => onHunkComment(h.header)}>
-                    Comment hunk
-                  </button>
+          diff.hunks.map((h) => (
+            <article key={h.header} className="panel-card">
+              <div className="hunk-header">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono truncate">{h.header}</span>
                 </div>
+                <button className="btn-ghost h-7 text-xs px-2" onClick={() => onHunkComment(h.header)}>
+                  Comment hunk
+                </button>
+              </div>
                 {h.lines.map((l, idx) => {
                   const cls =
                     l.kind === 'add' ? 'add' : l.kind === 'del' ? 'del' : l.kind === 'meta' ? 'context italic text-text-muted' : 'context';
@@ -344,9 +323,8 @@ function PrFileDiff({
                       {c.body}
                     </div>
                   ))}
-              </article>
-            );
-          })
+            </article>
+          ))
         )}
         {comments
           .filter((c) => c.target_kind === 'file')

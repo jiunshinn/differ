@@ -66,7 +66,6 @@ export default function ProjectSidebar() {
       dispatch({ type: 'setStatus', status: null });
       dispatch({ type: 'setSelectedFile', filePath: null });
       dispatch({ type: 'setPrNumber', n: null });
-      dispatch({ type: 'clearSelections' });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
       await recentQuery.refetch();
@@ -84,7 +83,6 @@ export default function ProjectSidebar() {
       dispatch({ type: 'setStatus', status: null });
       dispatch({ type: 'setSelectedFile', filePath: null });
       dispatch({ type: 'setPrNumber', n: null });
-      dispatch({ type: 'clearSelections' });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
       await recentQuery.refetch();

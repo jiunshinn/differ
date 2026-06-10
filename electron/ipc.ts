@@ -48,7 +48,6 @@ import {
   updateComment,
 } from './services/commentStore';
 import { listFileStates, setFileState } from './services/fileReviewStore';
-import { previewContext, saveContext } from './services/contextService';
 import {
   addAccount,
   getIssueDetail,
@@ -75,7 +74,6 @@ import {
 } from './services/githubOAuth';
 import type {
   CloneRequest,
-  ContextExtractionInput,
   GithubIssueStateFilter,
   GithubPullRequestStateFilter,
   GithubSubmitReviewInput,
@@ -346,19 +344,6 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IpcChannels.fileStateSet, async (sessionId: number, filePath: string, status: string) =>
     setFileState(sessionId, filePath, status as Parameters<typeof setFileState>[2]),
   );
-
-  // Context
-
-  handle(IpcChannels.contextPreview, async (input: ContextExtractionInput) => previewContext(input));
-  handle(
-    IpcChannels.contextSave,
-    async (input: { sessionId: number; title: string; task: string; output: string; included: Parameters<typeof saveContext>[4] }) =>
-      saveContext(input.sessionId, input.title, input.task, input.output, input.included),
-  );
-  handle(IpcChannels.contextCopy, async (markdown: string) => {
-    clipboard.writeText(markdown);
-    return true;
-  });
 
   // GitHub
 

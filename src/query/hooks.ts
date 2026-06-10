@@ -1,5 +1,4 @@
 import {
-  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -12,8 +11,6 @@ import type {
   ChangedFile,
   CommentLabel,
   CommentTargetKind,
-  ContextExtractionInput,
-  ContextExtractionResult,
   FileDiff,
   FileReviewStatus,
   GithubIssueStateFilter,
@@ -334,18 +331,6 @@ export function useGithubOrgReposQuery(accountId: number | null, org: string | n
       return api.ghListOrgRepos(accountId, org);
     },
     enabled: enabled && accountId != null && org != null,
-  });
-}
-
-export function useContextPreviewQuery(input: ContextExtractionInput | null, enabled: boolean) {
-  return useQuery<ContextExtractionResult>({
-    queryKey: input == null ? [...queryKeys.session.all(), 'context-preview', 'none'] : queryKeys.session.contextPreview(input),
-    queryFn: () => {
-      if (input == null) throw new Error('Context input is not ready');
-      return api.previewContext(input);
-    },
-    enabled: enabled && input != null,
-    placeholderData: keepPreviousData,
   });
 }
 

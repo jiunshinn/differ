@@ -16,12 +16,10 @@ import {
 } from '../query/hooks';
 import { queryKeys } from '../query/keys';
 import {
-  lineRangeKey,
   useAppStore,
   type ActivityEvent,
   type ActivityKind,
   type HistoryTab,
-  type LineRangeSelection,
   type RightPanelTab,
   type View,
 } from './store';
@@ -39,11 +37,10 @@ export type {
   ActivityEvent,
   ActivityKind,
   HistoryTab,
-  LineRangeSelection,
   RightPanelTab,
   View,
 };
-export { lineRangeKey, useAppStore };
+export { useAppStore };
 
 export interface AppState {
   view: View;
@@ -63,10 +60,6 @@ export interface AppState {
   rightPanelTab: RightPanelTab;
   historyTab: HistoryTab;
   fileFilter: string;
-  selectedCommentIds: number[];
-  selectedFilePaths: string[];
-  selectedHunkKeys: string[];
-  selectedLineRanges: LineRangeSelection[];
   activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
   lastFetchedAt: number | null;
@@ -89,11 +82,6 @@ type Action =
   | { type: 'setRightPanelTab'; tab: RightPanelTab }
   | { type: 'setHistoryTab'; tab: HistoryTab }
   | { type: 'setFileFilter'; value: string }
-  | { type: 'toggleCommentSelection'; id: number; on?: boolean }
-  | { type: 'toggleFileSelection'; path: string; on?: boolean }
-  | { type: 'toggleHunkSelection'; key: string; on?: boolean }
-  | { type: 'toggleLineRangeSelection'; range: LineRangeSelection; on?: boolean }
-  | { type: 'clearSelections' }
   | { type: 'pushActivity'; event: Omit<ActivityEvent, 'id' | 'at'> & { at?: number } }
   | { type: 'toast'; toast: AppState['toast'] }
   | { type: 'setLastFetchedAt'; at: number | null };
@@ -291,21 +279,6 @@ export function useApp(): Ctx {
         case 'setFileFilter':
           store.setFileFilter(action.value);
           break;
-        case 'toggleCommentSelection':
-          store.toggleCommentSelection(action.id, action.on);
-          break;
-        case 'toggleFileSelection':
-          store.toggleFileSelection(action.path, action.on);
-          break;
-        case 'toggleHunkSelection':
-          store.toggleHunkSelection(action.key, action.on);
-          break;
-        case 'toggleLineRangeSelection':
-          store.toggleLineRangeSelection(action.range, action.on);
-          break;
-        case 'clearSelections':
-          store.clearSelections();
-          break;
         case 'pushActivity':
           store.pushActivity(action.event);
           break;
@@ -347,10 +320,6 @@ export function useApp(): Ctx {
       rightPanelTab: clientState.rightPanelTab,
       historyTab: clientState.historyTab,
       fileFilter: clientState.fileFilter,
-      selectedCommentIds: clientState.selectedCommentIds,
-      selectedFilePaths: clientState.selectedFilePaths,
-      selectedHunkKeys: clientState.selectedHunkKeys,
-      selectedLineRanges: clientState.selectedLineRanges,
       activity: clientState.activity,
       toast: clientState.toast ? { kind: clientState.toast.kind, message: clientState.toast.message } : null,
       lastFetchedAt: clientState.lastFetchedAt,
@@ -367,11 +336,7 @@ export function useApp(): Ctx {
       clientState.prNumber,
       clientState.repo,
       clientState.rightPanelTab,
-      clientState.selectedCommentIds,
       clientState.selectedFile,
-      clientState.selectedFilePaths,
-      clientState.selectedHunkKeys,
-      clientState.selectedLineRanges,
       clientState.session,
       clientState.toast,
       clientState.view,

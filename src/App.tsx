@@ -10,7 +10,6 @@ const LocalChangesView = React.lazy(() => import('./views/LocalChangesView'));
 const PullRequestsView = React.lazy(() => import('./views/PullRequestsView'));
 const PullRequestDetailView = React.lazy(() => import('./views/PullRequestDetailView'));
 const IssuesView = React.lazy(() => import('./views/IssuesView'));
-const ContextBuilderView = React.lazy(() => import('./views/ContextBuilderView'));
 const HistoryView = React.lazy(() => import('./views/HistoryView'));
 const CodeBrowserView = React.lazy(() => import('./views/CodeBrowserView'));
 
@@ -32,7 +31,6 @@ function Shell() {
             {view === 'pr-list' && <PullRequestsView />}
             {view === 'pr-detail' && <PullRequestDetailView />}
             {view === 'issues' && <IssuesView />}
-            {view === 'context' && <ContextBuilderView />}
           </Suspense>
         </main>
       </div>

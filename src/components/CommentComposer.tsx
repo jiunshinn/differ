@@ -11,7 +11,6 @@ const LABELS: { label: string; value: CommentLabel }[] = [
   { label: 'question', value: 'question' },
   { label: 'refactor', value: 'refactor' },
   { label: 'test', value: 'test' },
-  { label: 'ask-ai', value: 'ask-ai' },
 ];
 
 export default function CommentComposer({
@@ -80,7 +79,7 @@ export default function CommentComposer({
           <div className="text-xs text-text-muted mb-3 font-mono truncate">{filePath}</div>
           <textarea
             className="input min-h-[140px] font-sans"
-            placeholder="Leave a comment. Mark as ask-ai to feed into the context bundle."
+            placeholder="Leave a review comment."
             value={body}
             onChange={(e) => setBody(e.target.value)}
             autoFocus
