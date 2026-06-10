@@ -3,14 +3,28 @@
 <img width="2056" height="1329" alt="Screenshot 2026-06-10 at 15 30 08" src="https://github.com/user-attachments/assets/168bade3-4b84-4494-b81e-a4d6e5a22b43" />
 
 
-A local-first, AI-native Git and GitHub review desktop app.
+A local-first Git and GitHub review desktop app.
 
-Differ is a focused desktop surface for reviewing local changes and GitHub PRs, leaving comments, extracting high-quality context, and handing that context to AI coding agents like Codex, Cursor, or Claude Code.
+Differ is a focused desktop surface for reviewing local changes and GitHub PRs, leaving actionable comments, and managing review state without opening a full IDE.
+
+## What you can do
+
+- Open local Git repositories and keep a pinned, reorderable recent repository sidebar.
+- Review unstaged, staged, and untracked changes with unified or split diffs.
+- Stage and unstage files or individual hunks, then commit or amend from the app.
+- Track file review state, inline comments, hunk comments, and file-level notes locally.
+- Browse repository files without leaving the desktop app.
+- Connect GitHub accounts with OAuth Device Flow or a personal access token.
+- Browse GitHub pull requests, PR details, changed files, checks, review comments, and Issues.
+- Fetch, pull, push, and monitor ahead/behind status from the top bar.
+- Switch between light, dark, and system themes.
 
 ## Stack
 
 - Electron (desktop shell)
 - React + Tailwind + Radix primitives (renderer)
+- Zustand for client-side UI state
+- TanStack Query for async IPC/GitHub data, mutations, and cache invalidation
 - SQLite via `better-sqlite3` (local storage)
 - Native `git` CLI through a typed IPC bridge (the renderer never spawns commands directly)
 - GitHub REST API via `@octokit/rest`
@@ -24,6 +38,14 @@ npm run dev
 
 `npm run dev` starts the Vite renderer on `http://localhost:5173` and an Electron process pointed at it.
 
+Useful checks:
+
+```sh
+npm run lint
+npm run typecheck
+npm run build
+```
+
 ## Build
 
 ```sh
@@ -32,6 +54,26 @@ npm start
 ```
 
 `npm run build` produces `dist/electron/*.js` (main + preload) and `dist/renderer/*` (the React app). `npm start` launches Electron against the built output.
+
+## Architecture notes
+
+- Renderer state is split between client state and server/cache state.
+- Client state lives in `src/state/store.ts` and is organized around repo, view, diff, toast, and activity concerns.
+- Async data lives behind TanStack Query hooks in `src/query/hooks.ts`, with stable keys from `src/query/keys.ts`.
+- Mutations invalidate or refresh the related repo, session, GitHub, comment, file-state, and diff queries instead of duplicating server data in the UI store.
+- `src/state/AppStore.tsx` remains as a compatibility layer for older components while new code can subscribe to Zustand selectors directly.
+- Heavier views are lazy-loaded from `src/App.tsx` so the renderer bundle is split by route-level surfaces.
+
+## CI
+
+GitHub Actions runs on pushes to `main` and on pull requests:
+
+```sh
+npm ci
+npm run lint
+npm run typecheck
+npm run build
+```
 
 ## GitHub OAuth (optional, for "Sign in with GitHub")
 
