@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../state/AppStore';
-import { api } from '../api';
 import { cn } from '../utils/cn';
+import { useStageFileMutation, useUnstageFileMutation } from '../query/hooks';
 import type { ChangedFile, WorkingTreeGroup } from '@shared/types';
 
 const GROUP_TITLES: Record<WorkingTreeGroup, string> = {
@@ -25,7 +25,9 @@ export default function ChangedFilesPanel() {
   for (const g of GROUP_ORDER) byGroup.set(g, []);
   for (const f of files) byGroup.get(f.group)!.push(f);
 
-  const repoId = state.repo!.id;
+  const repoId = state.repo?.id ?? null;
+  const stageFileMutation = useStageFileMutation(repoId);
+  const unstageFileMutation = useUnstageFileMutation(repoId);
 
   const onClickFile = async (f: ChangedFile) => {
     dispatch({ type: 'setSelectedFile', filePath: f.path });
@@ -35,7 +37,7 @@ export default function ChangedFilesPanel() {
 
   const stageFile = async (f: ChangedFile) => {
     try {
-      await api.stageFile(repoId, f.path);
+      await stageFileMutation.mutateAsync(f.path);
       logActivity({ kind: 'file_staged', message: 'Staged', detail: f.path });
       await refresh();
     } catch (e) {
@@ -44,7 +46,7 @@ export default function ChangedFilesPanel() {
   };
   const unstageFile = async (f: ChangedFile) => {
     try {
-      await api.unstageFile(repoId, f.path);
+      await unstageFileMutation.mutateAsync(f.path);
       logActivity({ kind: 'file_unstaged', message: 'Unstaged', detail: f.path });
       await refresh();
     } catch (e) {
@@ -54,7 +56,7 @@ export default function ChangedFilesPanel() {
   const stageAll = async (group: WorkingTreeGroup) => {
     for (const f of byGroup.get(group) ?? []) {
       try {
-        await api.stageFile(repoId, f.path);
+        await stageFileMutation.mutateAsync(f.path);
       } catch (e) {
         toast('error', (e as Error).message);
       }
@@ -65,7 +67,7 @@ export default function ChangedFilesPanel() {
   const unstageAll = async () => {
     for (const f of byGroup.get('staged') ?? []) {
       try {
-        await api.unstageFile(repoId, f.path);
+        await unstageFileMutation.mutateAsync(f.path);
       } catch (e) {
         toast('error', (e as Error).message);
       }

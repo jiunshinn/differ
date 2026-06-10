@@ -1,8 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../state/AppStore';
-import { api } from '../api';
 import { cn } from '../utils/cn';
 import CommentComposer from './CommentComposer';
+import {
+  useSetFileStateMutation,
+  useStageHunkMutation,
+  useUnstageHunkMutation,
+  useUpdateCommentMutation,
+} from '../query/hooks';
 import type { DiffHunk, DiffLine, FileDiff, ReviewComment } from '@shared/types';
 
 type Mode = 'unified' | 'split';
@@ -17,6 +22,11 @@ export default function DiffViewer() {
   }>(null);
 
   const selected = state.selectedFile;
+  const repoId = state.repo?.id ?? null;
+  const sessionId = state.session?.id ?? null;
+  const stageHunkMutation = useStageHunkMutation(repoId, selected);
+  const unstageHunkMutation = useUnstageHunkMutation(repoId, selected);
+  const setFileStateMutation = useSetFileStateMutation(sessionId);
 
   if (!selected) {
     return (
@@ -49,27 +59,22 @@ export default function DiffViewer() {
   const fileComments = state.comments.filter((c) => c.file_path === selected);
   const openComments = fileComments.filter((c) => c.status === 'open').length;
 
-  const repoId = state.repo!.id;
-  const sessionId = state.session?.id;
-
   const setMode = (m: Mode) => dispatch({ type: 'setDiffMode', mode: m });
 
   const stageHunk = async (hunkHeader: string) => {
     try {
-      await api.stageHunk(repoId, selected, hunkHeader);
+      await stageHunkMutation.mutateAsync(hunkHeader);
       logActivity({ kind: 'file_staged', message: 'Staged hunk', detail: `${selected} ${hunkHeader}` });
       await refresh();
-      await loadDiff(selected);
     } catch (e) {
       toast('error', (e as Error).message);
     }
   };
   const unstageHunk = async (hunkHeader: string) => {
     try {
-      await api.unstageHunk(repoId, selected, hunkHeader);
+      await unstageHunkMutation.mutateAsync(hunkHeader);
       logActivity({ kind: 'file_unstaged', message: 'Unstaged hunk', detail: `${selected} ${hunkHeader}` });
       await refresh();
-      await loadDiff(selected);
     } catch (e) {
       toast('error', (e as Error).message);
     }
@@ -79,9 +84,7 @@ export default function DiffViewer() {
     if (!sessionId) return;
     const current = state.fileStates.find((fs) => fs.file_path === selected);
     const next = current?.status === 'reviewed' ? 'viewed' : 'reviewed';
-    await api.setFileState(sessionId, selected, next);
-    const states = await api.getFileStates(sessionId);
-    dispatch({ type: 'setFileStates', states });
+    await setFileStateMutation.mutateAsync({ filePath: selected, status: next });
     if (next === 'reviewed') {
       logActivity({ kind: 'file_reviewed', message: 'Marked reviewed', detail: selected });
     }
@@ -560,18 +563,21 @@ function SideCell({
 }
 
 function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent: 'line' | 'hunk' }) {
-  const { state, dispatch, loadComments, toast, logActivity } = useApp();
+  const { state, dispatch, toast, logActivity } = useApp();
   const isSelected = state.selectedCommentIds.includes(comment.id);
+  const updateComment = useUpdateCommentMutation(state.session?.id ?? null);
 
   const resolve = async () => {
     try {
-      await api.updateComment(comment.id, { status: comment.status === 'open' ? 'resolved' : 'open' });
+      await updateComment.mutateAsync({
+        id: comment.id,
+        patch: { status: comment.status === 'open' ? 'resolved' : 'open' },
+      });
       logActivity({
         kind: 'comment_resolved',
         message: comment.status === 'open' ? 'Resolved comment' : 'Reopened comment',
         detail: comment.file_path,
       });
-      await loadComments();
     } catch (e) {
       toast('error', (e as Error).message);
     }

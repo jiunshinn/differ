@@ -1,8 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { api } from '../api';
-import type { GithubAccount, GithubOwnerRef, GithubRepoSummary } from '@shared/types';
+import type { GithubRepoSummary } from '@shared/types';
 import CloneFromUrlDialog from './CloneFromUrlDialog';
+import {
+  useGithubAuthQuery,
+  useGithubOrgReposQuery,
+  useGithubOrgsQuery,
+  useGithubReposQuery,
+} from '../query/hooks';
 
 interface Props {
   onClose: () => void;
@@ -13,84 +18,40 @@ type Scope =
   | { kind: 'account'; accountId: number }
   | { kind: 'org'; accountId: number; org: string };
 
-function scopeKey(s: Scope): string {
-  if (s.kind === 'all') return '__all__';
-  if (s.kind === 'account') return `acc:${s.accountId}`;
-  return `acc:${s.accountId}:org:${s.org}`;
-}
-
 export default function RepoBrowserDialog({ onClose }: Props) {
-  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
-  const [orgsByAccount, setOrgsByAccount] = useState<Record<number, GithubOwnerRef[]>>({});
   const [scope, setScope] = useState<Scope>({ kind: 'all' });
-  const [reposByScope, setReposByScope] = useState<Record<string, GithubRepoSummary[]>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [cloneTarget, setCloneTarget] = useState<GithubRepoSummary | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const state = await api.ghAuthList();
-        if (state.accounts.length === 0) {
-          setError('Add a GitHub account first (top-right account menu).');
-          return;
-        }
-        setAccounts(state.accounts);
-      } catch (e) {
-        setError((e as Error).message);
-      }
-    })();
-  }, []);
+  const authQuery = useGithubAuthQuery();
+  const accounts = authQuery.data?.accounts ?? [];
+  const activeAccountId = scope.kind === 'all' ? null : scope.accountId;
+  const allReposQuery = useGithubReposQuery(accounts.length > 0 && scope.kind !== 'org');
+  const orgsQuery = useGithubOrgsQuery(activeAccountId, activeAccountId != null);
+  const orgReposQuery = useGithubOrgReposQuery(
+    scope.kind === 'org' ? scope.accountId : null,
+    scope.kind === 'org' ? scope.org : null,
+    scope.kind === 'org',
+  );
 
-  // Lazily fetch orgs the first time an account scope is selected.
-  useEffect(() => {
-    if (scope.kind === 'all') return;
-    if (orgsByAccount[scope.accountId]) return;
-    void (async () => {
-      try {
-        const list = await api.ghListMyOrgs(scope.accountId);
-        setOrgsByAccount((prev) => ({ ...prev, [scope.accountId]: list }));
-      } catch {
-        // Silent — orgs are optional UI; the account row still works without them.
-      }
-    })();
-  }, [scope, orgsByAccount]);
-
-  const key = scopeKey(scope);
-
-  useEffect(() => {
-    if (reposByScope[key]) return;
-    if (accounts.length === 0 && scope.kind !== 'all') return;
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      try {
-        let repos: GithubRepoSummary[];
-        if (scope.kind === 'all') {
-          repos = await api.ghListAllRepos();
-        } else if (scope.kind === 'account') {
-          // Reuse listAllRepos result if present; else fetch and filter.
-          const all = reposByScope['__all__'] ?? (await api.ghListAllRepos());
-          if (!reposByScope['__all__']) {
-            setReposByScope((prev) => ({ ...prev, __all__: all }));
-          }
-          repos = all.filter((r) => r.accountId === scope.accountId);
-        } else {
-          repos = await api.ghListOrgRepos(scope.accountId, scope.org);
-        }
-        setReposByScope((prev) => ({ ...prev, [key]: repos }));
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, accounts.length]);
-
-  const repos = reposByScope[key] ?? [];
+  const repos = useMemo(() => {
+    if (scope.kind === 'org') return orgReposQuery.data ?? [];
+    const all = allReposQuery.data ?? [];
+    if (scope.kind === 'account') return all.filter((r) => r.accountId === scope.accountId);
+    return all;
+  }, [allReposQuery.data, orgReposQuery.data, scope]);
+  const queryError =
+    authQuery.error instanceof Error
+      ? authQuery.error.message
+      : allReposQuery.error instanceof Error
+      ? allReposQuery.error.message
+      : orgReposQuery.error instanceof Error
+      ? orgReposQuery.error.message
+      : null;
+  const error =
+    queryError ??
+    (authQuery.isSuccess && accounts.length === 0 ? 'Add a GitHub account first (top-right account menu).' : null);
+  const loading = authQuery.isLoading || allReposQuery.isFetching || orgReposQuery.isFetching;
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return repos;
@@ -118,8 +79,7 @@ export default function RepoBrowserDialog({ onClose }: Props) {
     );
   }
 
-  const activeAccountId = scope.kind === 'all' ? null : scope.accountId;
-  const orgsForActive = activeAccountId != null ? orgsByAccount[activeAccountId] ?? [] : [];
+  const orgsForActive = activeAccountId != null ? orgsQuery.data ?? [] : [];
 
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>

@@ -3,6 +3,8 @@ import { lineRangeKey, useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import ResizableLayout from '../components/ResizableLayout';
+import { useContextPreviewQuery } from '../query/hooks';
+import { useDebouncedValue } from '../utils/useDebouncedValue';
 
 export default function ContextBuilderView() {
   const { state, dispatch, toast, logActivity } = useApp();
@@ -11,8 +13,8 @@ export default function ContextBuilderView() {
   const [includeRepoMetadata, setIncludeRepoMetadata] = useState(true);
   const [includeFullFiles, setIncludeFullFiles] = useState(false);
   const [filter, setFilter] = useState<'all' | 'open' | 'ask-ai'>('all');
-  const [preview, setPreview] = useState('');
-  const [busy, setBusy] = useState(false);
+  const debouncedTask = useDebouncedValue(task, 350);
+  const debouncedTestCommand = useDebouncedValue(testCommand, 350);
 
   const filteredComments = useMemo(() => {
     if (filter === 'open') return state.comments.filter((c) => c.status === 'open');
@@ -29,46 +31,45 @@ export default function ContextBuilderView() {
     [state.selectedHunkKeys],
   );
 
+  const previewInput = useMemo(
+    () =>
+      state.session
+        ? {
+            sessionId: state.session.id,
+            task: debouncedTask,
+            testCommand: debouncedTestCommand.trim() || undefined,
+            includeRepoMetadata,
+            includeFullFiles,
+            commentIds: state.selectedCommentIds,
+            filePaths: state.selectedFilePaths,
+            hunks,
+            lineRanges: state.selectedLineRanges,
+          }
+        : null,
+    [
+      debouncedTask,
+      debouncedTestCommand,
+      hunks,
+      includeFullFiles,
+      includeRepoMetadata,
+      state.selectedCommentIds,
+      state.selectedFilePaths,
+      state.selectedLineRanges,
+      state.session,
+    ],
+  );
+  const previewQuery = useContextPreviewQuery(previewInput, !!state.repo && !!state.session);
+  const preview = previewQuery.data?.markdown ?? '';
+  const busy = previewQuery.isFetching;
+  const previewError = previewQuery.error instanceof Error ? previewQuery.error.message : null;
+
   useEffect(() => {
-    if (state.repo && state.session) void generate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    task,
-    testCommand,
-    includeRepoMetadata,
-    includeFullFiles,
-    state.session?.id,
-    state.selectedCommentIds.join('|'),
-    state.selectedFilePaths.join('|'),
-    state.selectedHunkKeys.join('|'),
-    state.selectedLineRanges.map(lineRangeKey).join('|'),
-  ]);
+    if (previewError) toast('error', previewError);
+  }, [previewError, toast]);
 
   if (!state.repo || !state.session) {
     return <div className="h-full w-full min-h-0 bg-bg p-8 text-text-muted">Open a repository first.</div>;
   }
-
-  const generate = async () => {
-    setBusy(true);
-    try {
-      const r = await api.previewContext({
-        sessionId: state.session!.id,
-        task,
-        testCommand: testCommand.trim() || undefined,
-        includeRepoMetadata,
-        includeFullFiles,
-        commentIds: state.selectedCommentIds,
-        filePaths: state.selectedFilePaths,
-        hunks,
-        lineRanges: state.selectedLineRanges,
-      });
-      setPreview(r.markdown);
-    } catch (e) {
-      toast('error', (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const copy = async () => {
     try {
@@ -251,7 +252,7 @@ export default function ContextBuilderView() {
           <div className="text-sm font-semibold tracking-tight">Preview</div>
           <div className="small-mono">{preview.length} chars</div>
           <div className="flex-1" />
-          <button className="btn" disabled={busy} onClick={() => void generate()}>
+          <button className="btn" disabled={busy} onClick={() => void previewQuery.refetch()}>
             Regenerate
           </button>
           <button className="btn" disabled={!preview} onClick={() => void save()}>

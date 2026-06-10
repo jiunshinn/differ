@@ -8,11 +8,11 @@ import ResizableLayout from '../components/ResizableLayout';
 
 export default function LocalChangesView() {
   const { state, dispatch, refresh, loadDiff } = useApp();
+  const repoId = state.repo?.id ?? null;
 
   useEffect(() => {
-    if (state.repo) void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.repo]);
+    if (repoId !== null) void refresh();
+  }, [repoId, refresh]);
 
   const filteredFiles = useMemo(() => {
     const filter = state.fileFilter.trim().toLowerCase();

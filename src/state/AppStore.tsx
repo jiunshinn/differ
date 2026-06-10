@@ -1,5 +1,30 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
+import {
+  commentsQueryOptions,
+  fileDiffQueryOptions,
+  fileStatesQueryOptions,
+  invalidateRepoQueries,
+  invalidateReviewQueries,
+  localSessionQueryOptions,
+  repoStatusQueryOptions,
+  useCommentsQuery,
+  useFileDiffQuery,
+  useFileStatesQuery,
+  useRepoStatusQuery,
+} from '../query/hooks';
+import { queryKeys } from '../query/keys';
+import {
+  lineRangeKey,
+  useAppStore,
+  type ActivityEvent,
+  type ActivityKind,
+  type HistoryTab,
+  type LineRangeSelection,
+  type RightPanelTab,
+  type View,
+} from './store';
 import type {
   ChangedFile,
   FileDiff,
@@ -10,40 +35,15 @@ import type {
   ReviewSession,
 } from '@shared/types';
 
-export type View = 'picker' | 'local' | 'pr-list' | 'pr-detail' | 'issues' | 'context' | 'history' | 'code';
-export type RightPanelTab = 'overview' | 'comments' | 'context';
-export type HistoryTab = 'graph' | 'resolve' | 'sync';
-
-export type ActivityKind =
-  | 'comment_created'
-  | 'comment_resolved'
-  | 'file_staged'
-  | 'file_unstaged'
-  | 'file_reviewed'
-  | 'commit'
-  | 'pull'
-  | 'push'
-  | 'fetch'
-  | 'context_copied'
-  | 'context_extracted';
-
-export interface ActivityEvent {
-  id: number;
-  kind: ActivityKind;
-  message: string;
-  detail?: string;
-  at: number; // epoch ms
-}
-
-export interface LineRangeSelection {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-}
-
-export function lineRangeKey(r: LineRangeSelection): string {
-  return `${r.filePath}::${r.startLine}-${r.endLine}`;
-}
+export type {
+  ActivityEvent,
+  ActivityKind,
+  HistoryTab,
+  LineRangeSelection,
+  RightPanelTab,
+  View,
+};
+export { lineRangeKey, useAppStore };
 
 export interface AppState {
   view: View;
@@ -56,19 +56,17 @@ export interface AppState {
   diffStaged: boolean;
   diffFullscreen: boolean;
   ignoreWhitespace: boolean;
-  diffsByFile: Record<string, FileDiff | null>;
+  diffsByFile: Record<string, FileDiff | null | undefined>;
   comments: ReviewComment[];
   fileStates: FileReviewState[];
   prNumber: number | null;
   rightPanelTab: RightPanelTab;
   historyTab: HistoryTab;
   fileFilter: string;
-  // selections
   selectedCommentIds: number[];
   selectedFilePaths: string[];
-  selectedHunkKeys: string[]; // "file::header"
-  selectedLineRanges: LineRangeSelection[]; // working-tree line spans
-  // activity log
+  selectedHunkKeys: string[];
+  selectedLineRanges: LineRangeSelection[];
   activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
   lastFetchedAt: number | null;
@@ -100,143 +98,9 @@ type Action =
   | { type: 'toast'; toast: AppState['toast'] }
   | { type: 'setLastFetchedAt'; at: number | null };
 
-const initial: AppState = {
-  view: 'picker',
-  repo: null,
-  session: null,
-  status: null,
-  selectedFile: null,
-  files: [],
-  diffMode: 'split',
-  diffStaged: false,
-  diffFullscreen: false,
-  ignoreWhitespace: false,
-  diffsByFile: {},
-  comments: [],
-  fileStates: [],
-  prNumber: null,
-  rightPanelTab: 'overview',
-  historyTab: 'graph',
-  fileFilter: '',
-  selectedCommentIds: [],
-  selectedFilePaths: [],
-  selectedHunkKeys: [],
-  selectedLineRanges: [],
-  activity: [],
-  toast: null,
-  lastFetchedAt: null,
-};
-
-let activityIdSeq = 1;
-const ACTIVITY_MAX = 30;
-
-function reducer(state: AppState, action: Action): AppState {
-  switch (action.type) {
-    case 'view':
-      return { ...state, view: action.view };
-    case 'setRepo':
-      return { ...state, repo: action.repo };
-    case 'setSession':
-      return { ...state, session: action.session };
-    case 'setStatus':
-      return { ...state, status: action.status, files: action.status?.files ?? [] };
-    case 'setSelectedFile':
-      return { ...state, selectedFile: action.filePath };
-    case 'setDiffMode':
-      return { ...state, diffMode: action.mode };
-    case 'setDiffStaged':
-      return { ...state, diffStaged: action.staged, diffsByFile: {} };
-    case 'setDiffFullscreen':
-      return { ...state, diffFullscreen: action.value };
-    case 'setIgnoreWhitespace':
-      return { ...state, ignoreWhitespace: action.value, diffsByFile: {} };
-    case 'setFileDiff':
-      return { ...state, diffsByFile: { ...state.diffsByFile, [action.filePath]: action.diff } };
-    case 'setComments':
-      return { ...state, comments: action.comments };
-    case 'setFileStates':
-      return { ...state, fileStates: action.states };
-    case 'setPrNumber':
-      return { ...state, prNumber: action.n };
-    case 'setRightPanelTab':
-      return { ...state, rightPanelTab: action.tab };
-    case 'setHistoryTab':
-      return { ...state, historyTab: action.tab };
-    case 'setFileFilter':
-      return { ...state, fileFilter: action.value };
-    case 'toggleCommentSelection': {
-      const has = state.selectedCommentIds.includes(action.id);
-      const on = action.on ?? !has;
-      return {
-        ...state,
-        selectedCommentIds: on
-          ? Array.from(new Set([...state.selectedCommentIds, action.id]))
-          : state.selectedCommentIds.filter((x) => x !== action.id),
-      };
-    }
-    case 'toggleFileSelection': {
-      const has = state.selectedFilePaths.includes(action.path);
-      const on = action.on ?? !has;
-      return {
-        ...state,
-        selectedFilePaths: on
-          ? Array.from(new Set([...state.selectedFilePaths, action.path]))
-          : state.selectedFilePaths.filter((x) => x !== action.path),
-      };
-    }
-    case 'toggleHunkSelection': {
-      const has = state.selectedHunkKeys.includes(action.key);
-      const on = action.on ?? !has;
-      return {
-        ...state,
-        selectedHunkKeys: on
-          ? Array.from(new Set([...state.selectedHunkKeys, action.key]))
-          : state.selectedHunkKeys.filter((x) => x !== action.key),
-      };
-    }
-    case 'toggleLineRangeSelection': {
-      const key = lineRangeKey(action.range);
-      const has = state.selectedLineRanges.some((r) => lineRangeKey(r) === key);
-      const on = action.on ?? !has;
-      return {
-        ...state,
-        selectedLineRanges: on
-          ? has
-            ? state.selectedLineRanges
-            : [...state.selectedLineRanges, action.range]
-          : state.selectedLineRanges.filter((r) => lineRangeKey(r) !== key),
-      };
-    }
-    case 'clearSelections':
-      return {
-        ...state,
-        selectedCommentIds: [],
-        selectedFilePaths: [],
-        selectedHunkKeys: [],
-        selectedLineRanges: [],
-      };
-    case 'pushActivity': {
-      const next: ActivityEvent = {
-        id: activityIdSeq++,
-        at: action.event.at ?? Date.now(),
-        kind: action.event.kind,
-        message: action.event.message,
-        detail: action.event.detail,
-      };
-      return { ...state, activity: [next, ...state.activity].slice(0, ACTIVITY_MAX) };
-    }
-    case 'toast':
-      return { ...state, toast: action.toast };
-    case 'setLastFetchedAt':
-      return { ...state, lastFetchedAt: action.at };
-    default:
-      return state;
-  }
-}
-
 interface Ctx {
   state: AppState;
-  dispatch: React.Dispatch<Action>;
+  dispatch: (action: Action) => void;
   refresh: () => Promise<void>;
   loadDiff: (filePath: string) => Promise<void>;
   loadComments: () => Promise<void>;
@@ -246,120 +110,280 @@ interface Ctx {
   silentFetch: () => Promise<void>;
 }
 
-const AppContext = createContext<Ctx | null>(null);
-
-export function useApp(): Ctx {
-  const c = useContext(AppContext);
-  if (!c) throw new Error('AppContext missing');
-  return c;
+export function AppProvider({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initial);
-  const stateRef = useRef(state);
-  stateRef.current = state;
+export function useApp(): Ctx {
+  const clientState = useAppStore();
+  const queryClient = useQueryClient();
+  const repoId = clientState.repo?.id ?? null;
+  const sessionId = clientState.session?.id ?? null;
+  const statusQuery = useRepoStatusQuery(repoId);
+  const commentsQuery = useCommentsQuery(sessionId);
+  const fileStatesQuery = useFileStatesQuery(sessionId);
+  const selectedDiffQuery = useFileDiffQuery({
+    repoId,
+    filePath: clientState.selectedFile,
+    staged: clientState.diffStaged,
+    ignoreWhitespace: clientState.ignoreWhitespace,
+    includeUntracked: !clientState.diffStaged,
+  });
 
   const toast = useCallback((kind: 'info' | 'success' | 'error', message: string) => {
-    dispatch({ type: 'toast', toast: { kind, message } });
-    setTimeout(() => dispatch({ type: 'toast', toast: null }), 3200);
+    useAppStore.getState().showToast(kind, message);
   }, []);
 
   const logActivity = useCallback((event: Omit<ActivityEvent, 'id' | 'at'>) => {
-    dispatch({ type: 'pushActivity', event });
+    useAppStore.getState().pushActivity(event);
   }, []);
 
   const refresh = useCallback(async () => {
-    const s = stateRef.current;
-    if (!s.repo) return;
+    const snapshot = useAppStore.getState();
+    if (!snapshot.repo) return;
     try {
-      const status = await api.status(s.repo.id);
-      dispatch({ type: 'setStatus', status });
-      const session = s.session ?? (await api.ensureLocalSession(s.repo.id));
-      if (!s.session) dispatch({ type: 'setSession', session });
-      // Reload diff for selected file
-      if (s.selectedFile) {
-        const diff = await api.fileDiff(s.repo.id, s.selectedFile, {
-          staged: s.diffStaged,
-          ignoreWhitespace: s.ignoreWhitespace,
-          includeUntracked: !s.diffStaged,
-        });
-        dispatch({ type: 'setFileDiff', filePath: s.selectedFile, diff });
+      await queryClient.fetchQuery(repoStatusQueryOptions(snapshot.repo.id));
+      const current = useAppStore.getState();
+      let session = current.session;
+      if (!session) {
+        session = await queryClient.fetchQuery(localSessionQueryOptions(snapshot.repo.id));
+        if (!session) return;
+        useAppStore.getState().setSession(session);
+        queryClient.setQueryData(queryKeys.session.detail(session.id), session);
       }
+      if (!session) return;
+      if (current.selectedFile) {
+        await queryClient.fetchQuery(
+          fileDiffQueryOptions(snapshot.repo.id, current.selectedFile, {
+            staged: current.diffStaged,
+            ignoreWhitespace: current.ignoreWhitespace,
+            includeUntracked: !current.diffStaged,
+          }),
+        );
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.session.comments(session.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.session.fileStates(session.id) }),
+      ]);
     } catch (e) {
       toast('error', (e as Error).message);
     }
-  }, [toast]);
+  }, [queryClient, toast]);
 
   const loadDiff = useCallback(
     async (filePath: string) => {
-      const s = stateRef.current;
-      if (!s.repo) return;
+      const snapshot = useAppStore.getState();
+      if (!snapshot.repo) return;
       try {
-        const diff = await api.fileDiff(s.repo.id, filePath, {
-          staged: s.diffStaged,
-          ignoreWhitespace: s.ignoreWhitespace,
-          includeUntracked: !s.diffStaged,
-        });
-        dispatch({ type: 'setFileDiff', filePath, diff });
-        // mark viewed
-        if (s.session) {
-          const existing = s.fileStates.find((fs) => fs.file_path === filePath);
+        await queryClient.fetchQuery(
+          fileDiffQueryOptions(snapshot.repo.id, filePath, {
+            staged: snapshot.diffStaged,
+            ignoreWhitespace: snapshot.ignoreWhitespace,
+            includeUntracked: !snapshot.diffStaged,
+          }),
+        );
+        if (snapshot.session) {
+          const states = await queryClient.fetchQuery(fileStatesQueryOptions(snapshot.session.id));
+          const existing = states.find((fs) => fs.file_path === filePath);
           if (!existing || existing.status === 'unviewed') {
-            await api.setFileState(s.session.id, filePath, 'viewed');
-            const states = await api.getFileStates(s.session.id);
-            dispatch({ type: 'setFileStates', states });
+            await api.setFileState(snapshot.session.id, filePath, 'viewed');
+            await invalidateReviewQueries(queryClient, snapshot.session.id);
           }
         }
       } catch (e) {
         toast('error', (e as Error).message);
       }
     },
-    [toast],
+    [queryClient, toast],
   );
 
   const loadComments = useCallback(async () => {
-    const s = stateRef.current;
-    if (!s.session) return;
-    const comments = await api.listComments(s.session.id);
-    dispatch({ type: 'setComments', comments });
-  }, []);
+    const session = useAppStore.getState().session;
+    if (!session) return;
+    await queryClient.fetchQuery(commentsQueryOptions(session.id));
+  }, [queryClient]);
 
   const loadFileStates = useCallback(async () => {
-    const s = stateRef.current;
-    if (!s.session) return;
-    const states = await api.getFileStates(s.session.id);
-    dispatch({ type: 'setFileStates', states });
-  }, []);
+    const session = useAppStore.getState().session;
+    if (!session) return;
+    await queryClient.fetchQuery(fileStatesQueryOptions(session.id));
+  }, [queryClient]);
 
   const silentFetch = useCallback(async () => {
-    const s = stateRef.current;
-    if (!s.repo) return;
+    const repo = useAppStore.getState().repo;
+    if (!repo) return;
     try {
-      await api.fetch(s.repo.id);
-      dispatch({ type: 'setLastFetchedAt', at: Date.now() });
-      const status = await api.status(s.repo.id);
-      dispatch({ type: 'setStatus', status });
+      await api.fetch(repo.id);
+      useAppStore.getState().setLastFetchedAt(Date.now());
+      await invalidateRepoQueries(queryClient, repo.id);
     } catch {
-      // Silent — auto-fetch failures (auth/network) should not toast.
+      // Background fetch failures should not interrupt the user.
     }
-  }, []);
+  }, [queryClient]);
 
-  // Reset lastFetchedAt when the repo changes so the freshness hint is per-repo.
-  useEffect(() => {
-    dispatch({ type: 'setLastFetchedAt', at: null });
-  }, [state.repo?.id]);
-
-  useEffect(() => {
-    if (state.repo && state.session) {
-      void loadComments();
-      void loadFileStates();
-    }
-  }, [state.repo, state.session, loadComments, loadFileStates]);
-
-  const value = useMemo<Ctx>(
-    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch }),
-    [state, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch],
+  const dispatch = useCallback(
+    (action: Action) => {
+      const store = useAppStore.getState();
+      switch (action.type) {
+        case 'view':
+          store.setView(action.view);
+          break;
+        case 'setRepo':
+          store.setRepo(action.repo);
+          break;
+        case 'setSession':
+          store.setSession(action.session);
+          if (action.session) queryClient.setQueryData(queryKeys.session.detail(action.session.id), action.session);
+          break;
+        case 'setStatus': {
+          const repo = store.repo;
+          if (repo && action.status) queryClient.setQueryData(queryKeys.repo.status(repo.id), action.status);
+          break;
+        }
+        case 'setSelectedFile':
+          store.setSelectedFile(action.filePath);
+          break;
+        case 'setDiffMode':
+          store.setDiffMode(action.mode);
+          break;
+        case 'setDiffStaged':
+          store.setDiffStaged(action.staged);
+          break;
+        case 'setDiffFullscreen':
+          store.setDiffFullscreen(action.value);
+          break;
+        case 'setIgnoreWhitespace':
+          store.setIgnoreWhitespace(action.value);
+          break;
+        case 'setFileDiff': {
+          const repo = store.repo;
+          if (repo) {
+            queryClient.setQueryData(
+              queryKeys.diff.file(repo.id, action.filePath, {
+                staged: store.diffStaged,
+                ignoreWhitespace: store.ignoreWhitespace,
+                includeUntracked: !store.diffStaged,
+              }),
+              action.diff,
+            );
+          }
+          break;
+        }
+        case 'setComments': {
+          const session = store.session;
+          if (session) queryClient.setQueryData(queryKeys.session.comments(session.id), action.comments);
+          break;
+        }
+        case 'setFileStates': {
+          const session = store.session;
+          if (session) queryClient.setQueryData(queryKeys.session.fileStates(session.id), action.states);
+          break;
+        }
+        case 'setPrNumber':
+          store.setPrNumber(action.n);
+          break;
+        case 'setRightPanelTab':
+          store.setRightPanelTab(action.tab);
+          break;
+        case 'setHistoryTab':
+          store.setHistoryTab(action.tab);
+          break;
+        case 'setFileFilter':
+          store.setFileFilter(action.value);
+          break;
+        case 'toggleCommentSelection':
+          store.toggleCommentSelection(action.id, action.on);
+          break;
+        case 'toggleFileSelection':
+          store.toggleFileSelection(action.path, action.on);
+          break;
+        case 'toggleHunkSelection':
+          store.toggleHunkSelection(action.key, action.on);
+          break;
+        case 'toggleLineRangeSelection':
+          store.toggleLineRangeSelection(action.range, action.on);
+          break;
+        case 'clearSelections':
+          store.clearSelections();
+          break;
+        case 'pushActivity':
+          store.pushActivity(action.event);
+          break;
+        case 'toast':
+          if (action.toast) store.showToast(action.toast.kind, action.toast.message);
+          else store.clearToast();
+          break;
+        case 'setLastFetchedAt':
+          store.setLastFetchedAt(action.at);
+          break;
+        default:
+          action satisfies never;
+      }
+    },
+    [queryClient],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  const diffsByFile = useMemo(() => {
+    if (!clientState.selectedFile) return {};
+    return { [clientState.selectedFile]: selectedDiffQuery.data };
+  }, [clientState.selectedFile, selectedDiffQuery.data]);
+
+  const state = useMemo<AppState>(
+    () => ({
+      view: clientState.view,
+      repo: clientState.repo,
+      session: clientState.session,
+      status: statusQuery.data ?? null,
+      selectedFile: clientState.selectedFile,
+      files: statusQuery.data?.files ?? [],
+      diffMode: clientState.diffMode,
+      diffStaged: clientState.diffStaged,
+      diffFullscreen: clientState.diffFullscreen,
+      ignoreWhitespace: clientState.ignoreWhitespace,
+      diffsByFile,
+      comments: commentsQuery.data ?? [],
+      fileStates: fileStatesQuery.data ?? [],
+      prNumber: clientState.prNumber,
+      rightPanelTab: clientState.rightPanelTab,
+      historyTab: clientState.historyTab,
+      fileFilter: clientState.fileFilter,
+      selectedCommentIds: clientState.selectedCommentIds,
+      selectedFilePaths: clientState.selectedFilePaths,
+      selectedHunkKeys: clientState.selectedHunkKeys,
+      selectedLineRanges: clientState.selectedLineRanges,
+      activity: clientState.activity,
+      toast: clientState.toast ? { kind: clientState.toast.kind, message: clientState.toast.message } : null,
+      lastFetchedAt: clientState.lastFetchedAt,
+    }),
+    [
+      clientState.activity,
+      clientState.diffFullscreen,
+      clientState.diffMode,
+      clientState.diffStaged,
+      clientState.fileFilter,
+      clientState.historyTab,
+      clientState.ignoreWhitespace,
+      clientState.lastFetchedAt,
+      clientState.prNumber,
+      clientState.repo,
+      clientState.rightPanelTab,
+      clientState.selectedCommentIds,
+      clientState.selectedFile,
+      clientState.selectedFilePaths,
+      clientState.selectedHunkKeys,
+      clientState.selectedLineRanges,
+      clientState.session,
+      clientState.toast,
+      clientState.view,
+      commentsQuery.data,
+      diffsByFile,
+      fileStatesQuery.data,
+      statusQuery.data,
+    ],
+  );
+
+  return useMemo<Ctx>(
+    () => ({ state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch }),
+    [state, dispatch, refresh, loadDiff, loadComments, loadFileStates, logActivity, toast, silentFetch],
+  );
 }

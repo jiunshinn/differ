@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useApp } from '../state/AppStore';
-import { api } from '../api';
 import { cn } from '../utils/cn';
+import { useCreateCommentMutation } from '../query/hooks';
 import type { CommentLabel, CommentTargetKind } from '@shared/types';
 
 const LABELS: { label: string; value: CommentLabel }[] = [
@@ -29,12 +29,13 @@ export default function CommentComposer({
   hunkHeader: string | null;
   onClose: () => void;
 }) {
-  const { state, loadComments, logActivity, toast } = useApp();
+  const { state, logActivity, toast } = useApp();
   const [body, setBody] = useState('');
   const [label, setLabel] = useState<CommentLabel>(null);
-  const [busy, setBusy] = useState(false);
 
   const sessionId = state.session?.id;
+  const createComment = useCreateCommentMutation(sessionId ?? null);
+  const busy = createComment.isPending;
 
   const save = async () => {
     if (!sessionId) return;
@@ -42,10 +43,8 @@ export default function CommentComposer({
       toast('error', 'Comment cannot be empty');
       return;
     }
-    setBusy(true);
     try {
-      await api.createComment({
-        review_session_id: sessionId,
+      await createComment.mutateAsync({
         file_path: filePath,
         target_kind: target,
         diff_side: side,
@@ -59,12 +58,9 @@ export default function CommentComposer({
         message: `Added ${target} comment`,
         detail: target === 'line' && line ? `${filePath} L${line}` : filePath,
       });
-      await loadComments();
       onClose();
     } catch (e) {
       toast('error', (e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 

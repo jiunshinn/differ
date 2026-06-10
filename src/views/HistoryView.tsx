@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
 import { cn } from '../utils/cn';
+import { useCommitsQuery } from '../query/hooks';
 import type { CommitSummary } from '@shared/types';
 
 export default function HistoryView() {
@@ -73,29 +74,16 @@ function SubHeaderSummary() {
 
 function GraphScreen() {
   const { state, toast } = useApp();
-  const [commits, setCommits] = useState<CommitSummary[] | null>(null);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const repoId = state.repo?.id ?? null;
+  const commitsQuery = useCommitsQuery(repoId, 80);
+  const commits = commitsQuery.data ?? null;
+  const loading = commitsQuery.isLoading;
+  const commitError = commitsQuery.error instanceof Error ? commitsQuery.error.message : null;
 
   useEffect(() => {
-    let cancelled = false;
-    if (!state.repo) return;
-    setLoading(true);
-    api
-      .commits(state.repo.id, 80)
-      .then((rows) => {
-        if (!cancelled) setCommits(rows);
-      })
-      .catch((e) => {
-        if (!cancelled) toast('error', (e as Error).message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [state.repo?.id]);
+    if (commitError) toast('error', commitError);
+  }, [commitError, toast]);
 
   const filtered = useMemo(() => {
     if (!commits) return [];
@@ -232,7 +220,7 @@ function formatRelative(iso: string): string {
 
 function ResolveScreen() {
   const { state, toast, refresh } = useApp();
-  const conflicts = state.files.filter((f) => f.group === 'conflicted');
+  const conflicts = useMemo(() => state.files.filter((f) => f.group === 'conflicted'), [state.files]);
   const [activePath, setActivePath] = useState<string | null>(conflicts[0]?.path ?? null);
   const [busy, setBusy] = useState<string | null>(null);
   const repoId = state.repo?.id ?? null;
@@ -247,7 +235,7 @@ function ResolveScreen() {
     if (activePath && !conflicts.some((c) => c.path === activePath)) {
       setActivePath(conflicts[0]?.path ?? null);
     }
-  }, [conflicts.map((c) => c.path).join('|')]);
+  }, [activePath, conflicts]);
 
   const runOp = async (label: string, fn: () => Promise<void>) => {
     if (repoId === null) return;

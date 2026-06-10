@@ -6,40 +6,29 @@ import BranchMenu from './BranchMenu';
 import GithubAuthDialog from './GithubAuthDialog';
 import { cn } from '../utils/cn';
 import { useTheme, type ThemeMode } from '../utils/theme';
+import { useGithubAuthQuery, useRepoCommandMutation } from '../query/hooks';
 import type { GithubAccount } from '@shared/types';
 
 export default function TopBar() {
   const { state, dispatch, refresh, logActivity, toast, silentFetch } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
-  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const authQuery = useGithubAuthQuery();
+  const accounts = authQuery.data?.accounts ?? [];
+  const repo = state.repo;
+  const status = state.status;
+  const fetchMutation = useRepoCommandMutation(repo?.id ?? null, (repoId) => api.fetch(repoId));
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, []);
 
-  const reloadAccounts = async () => {
-    try {
-      const state = await api.ghAuthList();
-      setAccounts(state.accounts);
-    } catch {
-      // ignore — auth list is best-effort
-    }
-  };
-
-  useEffect(() => {
-    void reloadAccounts();
-  }, []);
-
   const closeAuthDialog = () => {
     setAuthOpen(false);
-    void reloadAccounts();
+    void authQuery.refetch();
   };
-
-  const repo = state.repo;
-  const status = state.status;
 
   const goView = (view: typeof state.view) => dispatch({ type: 'view', view });
 
@@ -175,7 +164,7 @@ export default function TopBar() {
                 disabled={!!busy}
                 onClick={() =>
                   run('Fetch', 'fetch', async () => {
-                    await api.fetch(repo.id);
+                    await fetchMutation.mutateAsync();
                     dispatch({ type: 'setLastFetchedAt', at: Date.now() });
                     await refresh();
                   })

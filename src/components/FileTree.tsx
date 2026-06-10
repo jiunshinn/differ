@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react';
-import { api } from '../api';
 import { cn } from '../utils/cn';
+import { useTreeQuery } from '../query/hooks';
 import type { TreeEntry } from '@shared/types';
 
 interface Props {
@@ -30,29 +30,14 @@ function EntryGlyph({ kind, open }: { kind: 'dir' | 'file'; open: boolean }) {
 
 function TreeNode({ entry, depth, repoId, selectedPath, onSelectFile }: NodeProps) {
   const [open, setOpen] = useState(false);
-  const [children, setChildren] = useState<TreeEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (children || loading) return;
-    setLoading(true);
-    setErr(null);
-    try {
-      const list = await api.listTree(repoId, entry.path);
-      setChildren(list);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [children, loading, repoId, entry.path]);
+  const childrenQuery = useTreeQuery(repoId, entry.path, entry.kind === 'dir' && open);
+  const children = childrenQuery.data;
+  const loading = childrenQuery.isFetching;
+  const err = childrenQuery.error instanceof Error ? childrenQuery.error.message : null;
 
   const toggle = () => {
     if (entry.kind !== 'dir') return;
-    const next = !open;
-    setOpen(next);
-    if (next) void load();
+    setOpen((current) => !current);
   };
 
   const onClick = () => {
@@ -118,25 +103,9 @@ function TreeNode({ entry, depth, repoId, selectedPath, onSelectFile }: NodeProp
 }
 
 export default function FileTree({ repoId, selectedPath, onSelectFile }: Props) {
-  const [roots, setRoots] = useState<TreeEntry[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setRoots(null);
-    setErr(null);
-    api
-      .listTree(repoId, '')
-      .then((list) => {
-        if (!cancelled) setRoots(list);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setErr(e.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repoId]);
+  const rootsQuery = useTreeQuery(repoId, '');
+  const roots = rootsQuery.data;
+  const err = rootsQuery.error instanceof Error ? rootsQuery.error.message : null;
 
   if (err) {
     return <div className="text-sm text-danger p-3">{err}</div>;

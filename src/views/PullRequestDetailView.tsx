@@ -1,18 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  CircleDot,
+  ExternalLink,
+  FileText,
+  GitPullRequest,
+  MessageSquare,
+} from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
 import CommentComposer from '../components/CommentComposer';
-import ReviewPanel from '../components/ReviewPanel';
 import ResizableLayout from '../components/ResizableLayout';
-import type { FileDiff, GithubPullRequestDetail, GithubReviewEvent } from '@shared/types';
+import { ActivityView, PrSummaryPanel } from '../components/pr/PullRequestOverview';
+import {
+  useAllDiffQuery,
+  useGithubPullRequestChecksQuery,
+  useGithubPullRequestDetailQuery,
+} from '../query/hooks';
+import type { FileDiff, GithubCheckRun, GithubPullRequestDetail, GithubReviewEvent } from '@shared/types';
+
+type PrTab = 'activity' | 'diff';
+const EMPTY_DIFFS: FileDiff[] = [];
+const EMPTY_CHECKS: GithubCheckRun[] = [];
 
 export default function PullRequestDetailView() {
   const { state, dispatch, toast, logActivity } = useApp();
-  const [detail, setDetail] = useState<GithubPullRequestDetail | null>(null);
-  const [diffs, setDiffs] = useState<FileDiff[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<PrTab>('activity');
   const [composer, setComposer] = useState<null | {
     target: 'line' | 'hunk' | 'file';
     side: 'old' | 'new' | 'none';
@@ -24,38 +38,64 @@ export default function PullRequestDetailView() {
 
   const repo = state.repo;
   const prNumber = state.prNumber;
+  const detailQuery = useGithubPullRequestDetailQuery(repo?.id ?? null, prNumber);
+  const detail = detailQuery.data ?? null;
+  const diffsQuery = useAllDiffQuery(
+    repo?.id ?? null,
+    {
+      base: detail ? `origin/${detail.baseRef}` : undefined,
+      head: detail?.headSha,
+    },
+    !!detail,
+  );
+  const checksQuery = useGithubPullRequestChecksQuery(repo?.id ?? null, detail?.headSha);
+  const diffs = diffsQuery.data ?? EMPTY_DIFFS;
+  const checks = checksQuery.data ?? EMPTY_CHECKS;
+  const loading = detailQuery.isLoading || diffsQuery.isFetching || checksQuery.isFetching;
+  const loadError =
+    detailQuery.error instanceof Error
+      ? detailQuery.error.message
+      : diffsQuery.error instanceof Error
+      ? diffsQuery.error.message
+      : checksQuery.error instanceof Error
+      ? checksQuery.error.message
+      : null;
 
   useEffect(() => {
-    if (!repo || !prNumber) return;
-    void (async () => {
-      setLoading(true);
-      try {
-        const d = await api.ghPrDetail(repo.id, prNumber);
-        setDetail(d);
-        const merged = await api.allDiff(repo.id, {
-          base: `origin/${d.baseRef}`,
-          head: d.headSha,
-        });
-        setDiffs(merged);
-        if (merged.length && !selectedPath) setSelectedPath(merged[0].filePath);
-      } catch (e) {
-        toast('error', (e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo?.id, prNumber]);
+    if (loadError) toast('error', loadError);
+  }, [loadError, toast]);
 
-  if (!repo || !prNumber) {
-    return <div className="p-6 text-text-muted">Open a pull request from the list.</div>;
-  }
+  useEffect(() => {
+    if (!diffs.length) {
+      setSelectedPath(null);
+      return;
+    }
+    setSelectedPath((current) =>
+      current && diffs.some((diff) => diff.filePath === current) ? current : diffs[0].filePath,
+    );
+  }, [diffs]);
 
   const selectedDiff = useMemo(() => diffs.find((d) => d.filePath === selectedPath) ?? null, [diffs, selectedPath]);
 
-  if (!detail) {
-    return <div className="p-6 text-text-muted">{loading ? 'Loading…' : 'No PR detail.'}</div>;
+  if (!repo || !prNumber) {
+    return <div className="p-6 text-text-muted">Open a review from the list.</div>;
   }
+
+  if (!detail) {
+    return <div className="p-6 text-text-muted">{loading ? 'Loading...' : 'No PR detail.'}</div>;
+  }
+
+  const addAllFilesToContext = () => {
+    for (const diff of diffs) {
+      dispatch({ type: 'toggleFileSelection', path: diff.filePath, on: true });
+    }
+    dispatch({ type: 'view', view: 'context' });
+    logActivity({
+      kind: 'context_extracted',
+      message: 'Added review files to context',
+      detail: `PR #${detail.number}`,
+    });
+  };
 
   return (
     <>
@@ -64,33 +104,24 @@ export default function PullRequestDetailView() {
         className="h-full w-full min-h-0 bg-bg-panel"
         panes={[
           { defaultSize: 300, minSize: 240, maxSize: 520 },
-          { defaultSize: 0, minSize: 320, flex: true },
-          { defaultSize: 360, minSize: 280, maxSize: 600 },
+          { defaultSize: 0, minSize: 360, flex: true },
+          { defaultSize: 320, minSize: 280, maxSize: 460 },
         ]}
       >
         <aside className="overflow-auto border-r border-border bg-bg p-3.5">
+          <button className="btn h-8 w-full mb-3" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
+            Back to reviews
+          </button>
+
           <section className="panel-card p-3 mb-3.5">
-            <div className="text-xs text-text-muted font-mono">PR</div>
-            <div className="text-sm font-semibold leading-tight mt-1">
-              #{detail.number} {detail.title}
+            <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
+              <GitPullRequest size={14} className="text-success" />
+              PR #{detail.number}
             </div>
-            <div className="text-xs text-text-muted mt-1.5 font-mono">
-              {detail.author} · {detail.headRef} → {detail.baseRef}
+            <div className="text-sm font-semibold leading-tight mt-1.5">{detail.title}</div>
+            <div className="text-xs text-text-muted mt-1.5 font-mono truncate">
+              {detail.author} · {detail.headRef} to {detail.baseRef}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button className="btn" onClick={() => dispatch({ type: 'view', view: 'pr-list' })}>
-                Back
-              </button>
-              <button className="btn-primary" onClick={() => setSubmitOpen(true)}>
-                GitHub review
-              </button>
-            </div>
-            <button
-              className="btn w-full mt-2"
-              onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}
-            >
-              Open on GitHub ↗
-            </button>
           </section>
 
           <div className="section-label mb-2">Changed files</div>
@@ -104,7 +135,10 @@ export default function PullRequestDetailView() {
                     ? 'bg-bg-panel border-border shadow-card'
                     : 'border-transparent hover:bg-bg-subtle',
                 )}
-                onClick={() => setSelectedPath(d.filePath)}
+                onClick={() => {
+                  setSelectedPath(d.filePath);
+                  setTab('diff');
+                }}
               >
                 <span className="font-mono text-xs truncate flex-1" title={d.filePath}>
                   {d.filePath}
@@ -121,8 +155,42 @@ export default function PullRequestDetailView() {
             )}
           </div>
         </aside>
-        <div className="min-h-0 flex flex-col">
-          {selectedDiff ? (
+
+        <section className="min-h-0 grid grid-rows-[auto_minmax(0,1fr)] bg-bg-panel">
+          <header className="border-b border-border bg-bg-panel px-4 py-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
+                  <CircleDot size={14} className={detail.state === 'open' ? 'text-success' : 'text-text-muted'} />
+                  <span>{detail.state}</span>
+                  <span>#{detail.number}</span>
+                  <span>{detail.headRef} to {detail.baseRef}</span>
+                </div>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight leading-tight">{detail.title}</h1>
+              </div>
+              <div className="flex items-center gap-2 flex-none">
+                <button className="btn h-8 inline-flex items-center gap-1.5" onClick={() => void api.ghPrOpenInBrowser(repo.id, prNumber)}>
+                  <ExternalLink size={14} />
+                  GitHub
+                </button>
+                <button className="btn-primary h-8" onClick={() => setSubmitOpen(true)}>
+                  Submit review
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 inline-flex bg-bg border border-border rounded-lg p-[3px] gap-1">
+              <TabButton active={tab === 'activity'} onClick={() => setTab('activity')}>
+                Activity
+              </TabButton>
+              <TabButton active={tab === 'diff'} onClick={() => setTab('diff')}>
+                Diff
+              </TabButton>
+            </div>
+          </header>
+
+          {tab === 'activity' ? (
+            <ActivityView detail={detail} diffs={diffs} checks={checks} loading={loading} />
+          ) : selectedDiff ? (
             <PrFileDiff
               diff={selectedDiff}
               onLineComment={(side, line, hunkHeader) =>
@@ -138,9 +206,18 @@ export default function PullRequestDetailView() {
           ) : (
             <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
           )}
-        </div>
-        <ReviewPanel />
+        </section>
+
+        <PrSummaryPanel
+          detail={detail}
+          diffs={diffs}
+          checks={checks}
+          commentCount={state.comments.length}
+          onSubmit={() => setSubmitOpen(true)}
+          onBuildContext={addAllFilesToContext}
+        />
       </ResizableLayout>
+
       {composer && state.session && (
         <CommentComposer
           filePath={composer.filePath}
@@ -153,6 +230,20 @@ export default function PullRequestDetailView() {
       )}
       {submitOpen && <SubmitReviewDialog detail={detail} onClose={() => setSubmitOpen(false)} />}
     </>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      className={cn(
+        'h-7 px-2.5 rounded-md text-xs font-medium',
+        active ? 'bg-bg-panel text-text-primary border border-border' : 'text-text-muted hover:text-text-primary',
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -184,7 +275,8 @@ function PrFileDiff({
             {diff.isBinary && <span className="ml-2 tag">binary</span>}
           </p>
         </div>
-        <button className="btn h-8" onClick={onFileComment}>
+        <button className="btn h-8 inline-flex items-center gap-1.5" onClick={onFileComment}>
+          <MessageSquare size={14} />
           Comment file
         </button>
       </header>

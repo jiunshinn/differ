@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { loadLanguage } from '@uiw/codemirror-extensions-langs';
 import type { LanguageName } from '@uiw/codemirror-extensions-langs';
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 import { EditorView, lineNumbers } from '@codemirror/view';
-import { api } from '../api';
+import { useFileContentQuery } from '../query/hooks';
 import { useTheme } from '../utils/theme';
-import type { FileContent } from '@shared/types';
 
 interface Props {
   repoId: number;
@@ -73,43 +72,16 @@ function detectLanguage(path: string): LanguageName | null {
 
 export default function CodeViewer({ repoId, filePath, onAddLineComment, onSelectionChange }: Props) {
   const { isDark } = useTheme();
-  const [content, setContent] = useState<FileContent | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const contentQuery = useFileContentQuery(repoId, filePath);
+  const content = contentQuery.data ?? null;
+  const loading = contentQuery.isFetching;
+  const err = contentQuery.error instanceof Error ? contentQuery.error.message : null;
   // Keep latest callbacks in refs so the CodeMirror extensions, which are
   // rebuilt only when the file changes, always invoke the current handlers.
   const addCommentRef = useRef(onAddLineComment);
   const selectionRef = useRef(onSelectionChange);
   addCommentRef.current = onAddLineComment;
   selectionRef.current = onSelectionChange;
-
-  useEffect(() => {
-    if (!filePath) {
-      setContent(null);
-      setErr(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    api
-      .readFile(repoId, filePath)
-      .then((c) => {
-        if (!cancelled) setContent(c);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) {
-          setErr(e.message);
-          setContent(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repoId, filePath]);
 
   // Clear any leftover selection when switching files.
   useEffect(() => {

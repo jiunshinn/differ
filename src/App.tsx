@@ -1,20 +1,21 @@
-import React from 'react';
-import { AppProvider, useApp } from './state/AppStore';
-import RepositoryPicker from './views/RepositoryPicker';
-import LocalChangesView from './views/LocalChangesView';
-import PullRequestsView from './views/PullRequestsView';
-import PullRequestDetailView from './views/PullRequestDetailView';
-import IssuesView from './views/IssuesView';
-import ContextBuilderView from './views/ContextBuilderView';
-import HistoryView from './views/HistoryView';
-import CodeBrowserView from './views/CodeBrowserView';
+import React, { Suspense } from 'react';
+import { AppProvider, useAppStore } from './state/AppStore';
 import TopBar from './components/TopBar';
 import ProjectSidebar from './components/ProjectSidebar';
 import Toast from './components/Toast';
 import { useAutoFetch } from './utils/useAutoFetch';
 
+const RepositoryPicker = React.lazy(() => import('./views/RepositoryPicker'));
+const LocalChangesView = React.lazy(() => import('./views/LocalChangesView'));
+const PullRequestsView = React.lazy(() => import('./views/PullRequestsView'));
+const PullRequestDetailView = React.lazy(() => import('./views/PullRequestDetailView'));
+const IssuesView = React.lazy(() => import('./views/IssuesView'));
+const ContextBuilderView = React.lazy(() => import('./views/ContextBuilderView'));
+const HistoryView = React.lazy(() => import('./views/HistoryView'));
+const CodeBrowserView = React.lazy(() => import('./views/CodeBrowserView'));
+
 function Shell() {
-  const { state } = useApp();
+  const view = useAppStore((state) => state.view);
   useAutoFetch();
 
   return (
@@ -23,14 +24,16 @@ function Shell() {
       <div className="flex-1 min-w-0 bg-bg-panel overflow-hidden grid grid-rows-[48px_minmax(0,1fr)]">
         <TopBar />
         <main className="min-h-0">
-          {state.view === 'picker' && <RepositoryPicker />}
-          {state.view === 'local' && <LocalChangesView />}
-          {state.view === 'history' && <HistoryView />}
-          {state.view === 'code' && <CodeBrowserView />}
-          {state.view === 'pr-list' && <PullRequestsView />}
-          {state.view === 'pr-detail' && <PullRequestDetailView />}
-          {state.view === 'issues' && <IssuesView />}
-          {state.view === 'context' && <ContextBuilderView />}
+          <Suspense fallback={<div className="h-full grid place-items-center text-sm text-text-muted">Loading view...</div>}>
+            {view === 'picker' && <RepositoryPicker />}
+            {view === 'local' && <LocalChangesView />}
+            {view === 'history' && <HistoryView />}
+            {view === 'code' && <CodeBrowserView />}
+            {view === 'pr-list' && <PullRequestsView />}
+            {view === 'pr-detail' && <PullRequestDetailView />}
+            {view === 'issues' && <IssuesView />}
+            {view === 'context' && <ContextBuilderView />}
+          </Suspense>
         </main>
       </div>
       <Toast />

@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../state/AppStore';
-import { api } from '../api';
+import { useAmendMutation, useCommitMutation } from '../query/hooks';
 
 export default function CommitBar() {
   const { state, refresh, toast, logActivity } = useApp();
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
+  const repoId = state.repo?.id ?? null;
+  const commitMutation = useCommitMutation(repoId);
+  const amendMutation = useAmendMutation(repoId);
+  const busy = commitMutation.isPending || amendMutation.isPending;
   const stagedCount = useMemo(
     () => state.files.filter((f) => f.group === 'staged').length,
     [state.files],
@@ -21,9 +24,8 @@ export default function CommitBar() {
       toast('error', 'Nothing staged to commit');
       return;
     }
-    setBusy(true);
     try {
-      await api.commit(state.repo.id, message.trim());
+      await commitMutation.mutateAsync(message.trim());
       const subject = message.trim().split('\n')[0]!;
       setMessage('');
       await refresh();
@@ -31,24 +33,19 @@ export default function CommitBar() {
       logActivity({ kind: 'commit', message: 'Commit', detail: subject });
     } catch (e) {
       toast('error', (e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
   const amend = async () => {
     if (!state.repo) return;
-    setBusy(true);
     try {
-      await api.amend(state.repo.id, message.trim() || null);
+      await amendMutation.mutateAsync(message.trim() || null);
       setMessage('');
       await refresh();
       toast('success', 'Amended last commit');
       logActivity({ kind: 'commit', message: 'Amended last commit' });
     } catch (e) {
       toast('error', (e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 

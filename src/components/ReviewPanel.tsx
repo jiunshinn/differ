@@ -3,6 +3,13 @@ import { RefreshCw } from 'lucide-react';
 import { lineRangeKey, useApp, type ActivityEvent, type ActivityKind, type RightPanelTab } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
+import {
+  useContextPreviewQuery,
+  useDeleteCommentMutation,
+  useGithubPullRequestChecksQuery,
+  useUpdateCommentMutation,
+} from '../query/hooks';
+import { useDebouncedValue } from '../utils/useDebouncedValue';
 import type { CommentLabel, GithubCheckRun, ReviewComment } from '@shared/types';
 
 export default function ReviewPanel() {
@@ -137,30 +144,14 @@ function ChecksCard() {
   const repo = state.repo!;
   const session = state.session;
   const ref = session?.head_sha;
-
-  const [checks, setChecks] = useState<GithubCheckRun[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    if (!ref) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await api.ghPrChecks(repo.id, ref);
-      setChecks(list);
-    } catch (e) {
-      setError((e as Error).message);
-      toast('error', (e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const checksQuery = useGithubPullRequestChecksQuery(repo.id, ref);
+  const checks = checksQuery.data ?? null;
+  const loading = checksQuery.isFetching;
+  const error = checksQuery.error instanceof Error ? checksQuery.error.message : null;
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref]);
+    if (error) toast('error', error);
+  }, [error, toast]);
 
   return (
     <section className="panel-card">
@@ -168,7 +159,7 @@ function ChecksCard() {
         <strong className="font-semibold tracking-tight">GitHub checks</strong>
         <button
           className="btn-ghost h-7 px-2 inline-flex items-center justify-center"
-          onClick={() => void load()}
+          onClick={() => void checksQuery.refetch()}
           disabled={loading}
           aria-label="Refresh checks"
           title="Refresh checks"
@@ -319,8 +310,11 @@ function kindInitials(kind: ActivityKind): string {
 }
 
 function CommentsTab() {
-  const { state, dispatch, loadComments, toast, logActivity } = useApp();
+  const { state, dispatch, toast, logActivity } = useApp();
   const [filter, setFilter] = useState<'all' | 'open' | 'resolved' | 'ask-ai'>('all');
+  const sessionId = state.session?.id ?? null;
+  const deleteComment = useDeleteCommentMutation(sessionId);
+  const updateComment = useUpdateCommentMutation(sessionId);
   const comments = useMemo(() => {
     if (filter === 'open') return state.comments.filter((c) => c.status === 'open');
     if (filter === 'resolved') return state.comments.filter((c) => c.status === 'resolved');
@@ -331,21 +325,22 @@ function CommentsTab() {
   const onToggleSelect = (id: number) => dispatch({ type: 'toggleCommentSelection', id });
   const onDelete = async (id: number) => {
     try {
-      await api.deleteComment(id);
-      await loadComments();
+      await deleteComment.mutateAsync(id);
     } catch (e) {
       toast('error', (e as Error).message);
     }
   };
   const onResolve = async (c: ReviewComment) => {
     try {
-      await api.updateComment(c.id, { status: c.status === 'open' ? 'resolved' : 'open' });
+      await updateComment.mutateAsync({
+        id: c.id,
+        patch: { status: c.status === 'open' ? 'resolved' : 'open' },
+      });
       logActivity({
         kind: 'comment_resolved',
         message: c.status === 'open' ? 'Resolved comment' : 'Reopened comment',
         detail: c.file_path,
       });
-      await loadComments();
     } catch (e) {
       toast('error', (e as Error).message);
     }
@@ -424,11 +419,11 @@ function CommentsTab() {
 }
 
 function LabelChooser({ comment }: { comment: ReviewComment }) {
-  const { loadComments, toast } = useApp();
+  const { state, toast } = useApp();
+  const updateComment = useUpdateCommentMutation(state.session?.id ?? null);
   const onChange = async (label: CommentLabel) => {
     try {
-      await api.updateComment(comment.id, { label });
-      await loadComments();
+      await updateComment.mutateAsync({ id: comment.id, patch: { label } });
     } catch (e) {
       toast('error', (e as Error).message);
     }
@@ -451,8 +446,6 @@ function LabelChooser({ comment }: { comment: ReviewComment }) {
 
 function ContextTab() {
   const { state, dispatch, toast, logActivity } = useApp();
-  const [preview, setPreview] = useState('');
-  const [busy, setBusy] = useState(false);
 
   const hunks = useMemo(
     () =>
@@ -462,56 +455,44 @@ function ContextTab() {
       }),
     [state.selectedHunkKeys],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    const sessionId = state.session?.id;
-    if (!sessionId) {
-      setPreview('');
-      return;
-    }
-    const hasAny =
-      state.selectedCommentIds.length ||
+  const hasAny = Boolean(
+    state.selectedCommentIds.length ||
       state.selectedFilePaths.length ||
       state.selectedHunkKeys.length ||
-      state.selectedLineRanges.length;
-    if (!hasAny) {
-      setPreview('');
-      return;
-    }
-    setBusy(true);
-    api
-      .previewContext({
-        sessionId,
-        task: 'Review the selected changes and improve where appropriate.',
-        includeRepoMetadata: true,
-        includeFullFiles: false,
-        commentIds: state.selectedCommentIds,
-        filePaths: state.selectedFilePaths,
-        hunks,
-        lineRanges: state.selectedLineRanges,
-      })
-      .then((r) => {
-        if (!cancelled) setPreview(r.markdown);
-      })
-      .catch((e) => {
-        if (!cancelled) toast('error', (e as Error).message);
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    state.session?.id,
-    state.selectedCommentIds.join('|'),
-    state.selectedFilePaths.join('|'),
-    state.selectedHunkKeys.join('|'),
-    state.selectedLineRanges.map(lineRangeKey).join('|'),
-    hunks,
-    toast,
-  ]);
+      state.selectedLineRanges.length,
+  );
+  const previewInput = useMemo(
+    () =>
+      state.session && hasAny
+        ? {
+            sessionId: state.session.id,
+            task: 'Review the selected changes and improve where appropriate.',
+            includeRepoMetadata: true,
+            includeFullFiles: false,
+            commentIds: state.selectedCommentIds,
+            filePaths: state.selectedFilePaths,
+            hunks,
+            lineRanges: state.selectedLineRanges,
+          }
+        : null,
+    [
+      hasAny,
+      hunks,
+      state.selectedCommentIds,
+      state.selectedFilePaths,
+      state.selectedLineRanges,
+      state.session,
+    ],
+  );
+  const debouncedPreviewInput = useDebouncedValue(previewInput, 300);
+  const previewQuery = useContextPreviewQuery(debouncedPreviewInput, debouncedPreviewInput !== null);
+  const preview = debouncedPreviewInput ? previewQuery.data?.markdown ?? '' : '';
+  const busy = debouncedPreviewInput !== null && previewQuery.isFetching;
+  const previewError = previewQuery.error instanceof Error ? previewQuery.error.message : null;
+
+  useEffect(() => {
+    if (previewError) toast('error', previewError);
+  }, [previewError, toast]);
 
   const copy = async () => {
     try {

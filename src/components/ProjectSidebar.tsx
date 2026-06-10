@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
+import { useRecentReposQuery } from '../query/hooks';
+import { queryKeys } from '../query/keys';
 import { cn } from '../utils/cn';
 import type { Repository } from '@shared/types';
 
 const STORAGE_KEY = 'differ:projectSidebar:collapsed';
 const DND_MIME = 'application/x-differ-repo-id';
+const EMPTY_REPOS: Repository[] = [];
 
 function initials(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9]+/g, ' ').trim();
@@ -19,7 +23,9 @@ type DropPos = 'before' | 'after';
 
 export default function ProjectSidebar() {
   const { state, dispatch, refresh, toast } = useApp();
-  const [recent, setRecent] = useState<Repository[]>([]);
+  const queryClient = useQueryClient();
+  const recentQuery = useRecentReposQuery();
+  const recent = recentQuery.data ?? EMPTY_REPOS;
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) === '1';
@@ -30,23 +36,11 @@ export default function ProjectSidebar() {
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: number; pos: DropPos } | null>(null);
   const dragIdRef = useRef<number | null>(null);
-
-  const load = async () => {
-    try {
-      const list = await api.recentRepos();
-      setRecent(list);
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
+  const recentError = recentQuery.error instanceof Error ? recentQuery.error.message : null;
 
   useEffect(() => {
-    void load();
-  }, []);
-
-  useEffect(() => {
-    if (state.repo) void load();
-  }, [state.repo?.id]);
+    if (recentError) toast('error', recentError);
+  }, [recentError, toast]);
 
   useEffect(() => {
     try {
@@ -75,7 +69,7 @@ export default function ProjectSidebar() {
       dispatch({ type: 'clearSelections' });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
-      await load();
+      await recentQuery.refetch();
     } catch (e) {
       toast('error', (e as Error).message);
     }
@@ -93,7 +87,7 @@ export default function ProjectSidebar() {
       dispatch({ type: 'clearSelections' });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
-      await load();
+      await recentQuery.refetch();
     } catch (e) {
       toast('error', (e as Error).message);
     }
@@ -101,23 +95,25 @@ export default function ProjectSidebar() {
 
   const togglePin = async (repo: Repository) => {
     const wantPinned = !repo.pinned;
-    setRecent((prev) =>
+    queryClient.setQueryData<Repository[]>(queryKeys.repo.recent(), (prev = EMPTY_REPOS) =>
       prev.map((r) => (r.id === repo.id ? { ...r, pinned: wantPinned ? 1 : 0 } : r)),
     );
     try {
       await api.setRepoPinned(repo.id, wantPinned);
+      await recentQuery.refetch();
     } catch (e) {
       toast('error', (e as Error).message);
-      await load();
+      await recentQuery.refetch();
     }
   };
 
   const persistOrder = async (orderedAll: Repository[]) => {
     try {
       await api.reorderRepos(orderedAll.map((r) => r.id));
+      await recentQuery.refetch();
     } catch (e) {
       toast('error', (e as Error).message);
-      await load();
+      await recentQuery.refetch();
     }
   };
 
@@ -141,9 +137,9 @@ export default function ProjectSidebar() {
     const movedRepo: Repository = { ...from, pinned: willPin ? 1 : 0 };
     without.splice(insertAt, 0, movedRepo);
     const nextAll = willPin ? [...without, ...other] : [...other, ...without];
-    setRecent(nextAll);
+    queryClient.setQueryData(queryKeys.repo.recent(), nextAll);
     if (from.pinned !== movedRepo.pinned) {
-      void api.setRepoPinned(from.id, willPin).catch(() => void load());
+      void api.setRepoPinned(from.id, willPin).catch(() => void recentQuery.refetch());
     }
     void persistOrder(nextAll);
   };

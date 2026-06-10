@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   CircleDot,
@@ -9,10 +9,10 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../api';
-import { useApp } from '../state/AppStore';
+import { useAppStore } from '../state/AppStore';
 import { cn } from '../utils/cn';
+import { useGithubAuthQuery, useGithubIssueDetailQuery, useGithubIssuesQuery } from '../query/hooks';
 import type {
-  GithubAccount,
   GithubIssueDetail,
   GithubIssueLabel,
   GithubIssueStateFilter,
@@ -26,75 +26,40 @@ const FILTERS: { id: GithubIssueStateFilter; label: string }[] = [
 ];
 
 export default function IssuesView() {
-  const { state, toast } = useApp();
-  const repo = state.repo;
-  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
-  const [issues, setIssues] = useState<GithubIssueSummary[]>([]);
-  const [detail, setDetail] = useState<GithubIssueDetail | null>(null);
+  const repo = useAppStore((state) => state.repo);
+  const toast = useAppStore((state) => state.showToast);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [filter, setFilter] = useState<GithubIssueStateFilter>('open');
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const connectedToGithub = !!(repo?.github_owner && repo.github_repo);
+  const authQuery = useGithubAuthQuery();
+  const accounts = authQuery.data?.accounts ?? [];
+  const canLoadIssues = connectedToGithub && accounts.length > 0 && repo?.github_account_id != null;
+  const issuesQuery = useGithubIssuesQuery(repo?.id ?? null, filter, canLoadIssues);
+  const issues = useMemo(
+    () => (canLoadIssues ? issuesQuery.data ?? [] : []),
+    [canLoadIssues, issuesQuery.data],
+  );
+  const detailQuery = useGithubIssueDetailQuery(repo?.id ?? null, selectedNumber);
+  const detail = detailQuery.data ?? null;
+  const loading = authQuery.isLoading || issuesQuery.isFetching;
+  const detailLoading = detailQuery.isFetching;
 
   const boundAccount = repo?.github_account_id
     ? accounts.find((a) => a.id === repo.github_account_id) ?? null
     : null;
 
-  const load = useCallback(async () => {
-    if (!repo) return;
-    setLoading(true);
-    try {
-      const authState = await api.ghAuthList();
-      setAccounts(authState.accounts);
-      if (
-        authState.accounts.length > 0 &&
-        repo.github_owner &&
-        repo.github_repo &&
-        repo.github_account_id != null
-      ) {
-        const nextIssues = await api.ghIssueList(repo.id, filter);
-        setIssues(nextIssues);
-        setSelectedNumber((current) =>
-          nextIssues.some((issue) => issue.number === current)
-            ? current
-            : nextIssues[0]?.number ?? null,
-        );
-        if (nextIssues.length === 0) setDetail(null);
-      } else {
-        setIssues([]);
-        setSelectedNumber(null);
-        setDetail(null);
-      }
-    } catch (e) {
-      toast('error', (e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, repo, toast]);
+  useEffect(() => {
+    setSelectedNumber((current) =>
+      issues.some((issue) => issue.number === current) ? current : issues[0]?.number ?? null,
+    );
+  }, [issues]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!repo || selectedNumber == null) return;
-    let cancelled = false;
-    void (async () => {
-      setDetailLoading(true);
-      try {
-        const nextDetail = await api.ghIssueDetail(repo.id, selectedNumber);
-        if (!cancelled) setDetail(nextDetail);
-      } catch (e) {
-        if (!cancelled) toast('error', (e as Error).message);
-      } finally {
-        if (!cancelled) setDetailLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, selectedNumber, toast]);
+    const errors = [authQuery.error, issuesQuery.error, detailQuery.error].filter(Boolean);
+    const first = errors[0];
+    if (first instanceof Error) toast('error', first.message);
+  }, [authQuery.error, detailQuery.error, issuesQuery.error, toast]);
 
   const filteredIssues = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,7 +79,6 @@ export default function IssuesView() {
   if (!repo) return null;
 
   const selectedIssue = issues.find((issue) => issue.number === selectedNumber) ?? null;
-  const connectedToGithub = !!(repo.github_owner && repo.github_repo);
 
   return (
     <div className="h-full w-full min-h-0 bg-bg-panel">
@@ -152,7 +116,15 @@ export default function IssuesView() {
                 </button>
               ))}
             </div>
-            <button className="btn" onClick={() => void load()} disabled={loading}>
+            <button
+              className="btn"
+              onClick={() => {
+                void authQuery.refetch();
+                void issuesQuery.refetch();
+                if (selectedNumber != null) void detailQuery.refetch();
+              }}
+              disabled={loading}
+            >
               <RefreshCw size={14} strokeWidth={2} className={cn(loading && 'animate-spin')} />
               Refresh
             </button>
@@ -220,7 +192,6 @@ export default function IssuesView() {
                         selected={issue.number === selectedNumber}
                         onClick={() => {
                           setSelectedNumber(issue.number);
-                          if (detail?.number !== issue.number) setDetail(null);
                         }}
                       />
                     ))}
