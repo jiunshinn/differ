@@ -1,4 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import {
@@ -42,6 +43,15 @@ export type {
 };
 export { useAppStore };
 
+// Narrow hook for the changed-files filter. Kept out of the shared useApp().state
+// memo so typing in the filter input does not re-render every useApp() consumer
+// (notably DiffViewer's full diff render).
+export function useFileFilter(): [string, (value: string) => void] {
+  const fileFilter = useAppStore((s) => s.fileFilter);
+  const setFileFilter = useAppStore((s) => s.setFileFilter);
+  return [fileFilter, setFileFilter];
+}
+
 export interface AppState {
   view: View;
   repo: Repository | null;
@@ -59,7 +69,6 @@ export interface AppState {
   prNumber: number | null;
   rightPanelTab: RightPanelTab;
   historyTab: HistoryTab;
-  fileFilter: string;
   activity: ActivityEvent[];
   toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
   lastFetchedAt: number | null;
@@ -75,9 +84,6 @@ type Action =
   | { type: 'setDiffStaged'; staged: boolean }
   | { type: 'setDiffFullscreen'; value: boolean }
   | { type: 'setIgnoreWhitespace'; value: boolean }
-  | { type: 'setFileDiff'; filePath: string; diff: FileDiff | null }
-  | { type: 'setComments'; comments: ReviewComment[] }
-  | { type: 'setFileStates'; states: FileReviewState[] }
   | { type: 'setPrNumber'; n: number | null }
   | { type: 'setRightPanelTab'; tab: RightPanelTab }
   | { type: 'setHistoryTab'; tab: HistoryTab }
@@ -103,7 +109,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 }
 
 export function useApp(): Ctx {
-  const clientState = useAppStore();
+  // Subscribe only to the slices useApp() actually exposes (everything except
+  // fileFilter, which has its own narrow useFileFilter() hook). useShallow keeps
+  // the subscription from firing on store-internal churn we do not read.
+  const clientState = useAppStore(
+    useShallow((s) => ({
+      view: s.view,
+      repo: s.repo,
+      session: s.session,
+      selectedFile: s.selectedFile,
+      diffMode: s.diffMode,
+      diffStaged: s.diffStaged,
+      diffFullscreen: s.diffFullscreen,
+      ignoreWhitespace: s.ignoreWhitespace,
+      prNumber: s.prNumber,
+      rightPanelTab: s.rightPanelTab,
+      historyTab: s.historyTab,
+      activity: s.activity,
+      toast: s.toast,
+      lastFetchedAt: s.lastFetchedAt,
+    })),
+  );
   const queryClient = useQueryClient();
   const repoId = clientState.repo?.id ?? null;
   const sessionId = clientState.session?.id ?? null;
@@ -127,33 +153,52 @@ export function useApp(): Ctx {
   }, []);
 
   const refresh = useCallback(async () => {
-    const snapshot = useAppStore.getState();
-    if (!snapshot.repo) return;
+    const repo = useAppStore.getState().repo;
+    if (!repo) return;
+    const repoId = repo.id;
+    // After every await we re-check that the active repo is still the one we
+    // started with; if the user switched repos mid-flight, abandon this refresh
+    // so we never apply repo A's status/session/toast to repo B.
+    const stale = () => useAppStore.getState().repo?.id !== repoId;
     try {
-      await queryClient.fetchQuery(repoStatusQueryOptions(snapshot.repo.id));
-      const current = useAppStore.getState();
-      let session = current.session;
+      // Force-fresh status (and branches/commits) so post-pull/sync/commit state
+      // appears immediately rather than after the next background fetch.
+      await Promise.all([
+        queryClient.fetchQuery({ ...repoStatusQueryOptions(repoId), staleTime: 0 }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.repo.branches(repoId) }),
+        // Prefix match every commits query regardless of its `limit` argument.
+        queryClient.invalidateQueries({ queryKey: [...queryKeys.repo.scope(repoId), 'commits'] }),
+      ]);
+      if (stale()) return;
+
+      let session = useAppStore.getState().session;
       if (!session) {
-        session = await queryClient.fetchQuery(localSessionQueryOptions(snapshot.repo.id));
+        session = await queryClient.fetchQuery(localSessionQueryOptions(repoId));
+        if (stale()) return;
         if (!session) return;
         useAppStore.getState().setSession(session);
         queryClient.setQueryData(queryKeys.session.detail(session.id), session);
       }
       if (!session) return;
+
+      const current = useAppStore.getState();
       if (current.selectedFile) {
-        await queryClient.fetchQuery(
-          fileDiffQueryOptions(snapshot.repo.id, current.selectedFile, {
+        await queryClient.fetchQuery({
+          ...fileDiffQueryOptions(repoId, current.selectedFile, {
             staged: current.diffStaged,
             ignoreWhitespace: current.ignoreWhitespace,
             includeUntracked: !current.diffStaged,
           }),
-        );
+          staleTime: 0,
+        });
+        if (stale()) return;
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.session.comments(session.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session.fileStates(session.id) }),
       ]);
     } catch (e) {
+      if (stale()) return;
       toast('error', (e as Error).message);
     }
   }, [queryClient, toast]);
@@ -200,10 +245,15 @@ export function useApp(): Ctx {
   const silentFetch = useCallback(async () => {
     const repo = useAppStore.getState().repo;
     if (!repo) return;
+    const repoId = repo.id;
     try {
-      await api.fetch(repo.id);
+      await api.fetch(repoId);
+      // The fetch is a multi-second network op; if the user switched repos while
+      // it ran, do not stamp "last fetched" onto a repo that was never fetched
+      // and do not invalidate the now-current repo's queries on its behalf.
+      if (useAppStore.getState().repo?.id !== repoId) return;
       useAppStore.getState().setLastFetchedAt(Date.now());
-      await invalidateRepoQueries(queryClient, repo.id);
+      await invalidateRepoQueries(queryClient, repoId);
     } catch {
       // Background fetch failures should not interrupt the user.
     }
@@ -225,7 +275,14 @@ export function useApp(): Ctx {
           break;
         case 'setStatus': {
           const repo = store.repo;
-          if (repo && action.status) queryClient.setQueryData(queryKeys.repo.status(repo.id), action.status);
+          if (!repo) break;
+          if (action.status) {
+            queryClient.setQueryData(queryKeys.repo.status(repo.id), action.status);
+          } else {
+            // Clearing status: drop the cached entry so callers do not briefly
+            // see stale data (status is owned by TanStack Query and will refetch).
+            queryClient.removeQueries({ queryKey: queryKeys.repo.status(repo.id) });
+          }
           break;
         }
         case 'setSelectedFile':
@@ -243,30 +300,6 @@ export function useApp(): Ctx {
         case 'setIgnoreWhitespace':
           store.setIgnoreWhitespace(action.value);
           break;
-        case 'setFileDiff': {
-          const repo = store.repo;
-          if (repo) {
-            queryClient.setQueryData(
-              queryKeys.diff.file(repo.id, action.filePath, {
-                staged: store.diffStaged,
-                ignoreWhitespace: store.ignoreWhitespace,
-                includeUntracked: !store.diffStaged,
-              }),
-              action.diff,
-            );
-          }
-          break;
-        }
-        case 'setComments': {
-          const session = store.session;
-          if (session) queryClient.setQueryData(queryKeys.session.comments(session.id), action.comments);
-          break;
-        }
-        case 'setFileStates': {
-          const session = store.session;
-          if (session) queryClient.setQueryData(queryKeys.session.fileStates(session.id), action.states);
-          break;
-        }
         case 'setPrNumber':
           store.setPrNumber(action.n);
           break;
@@ -319,7 +352,6 @@ export function useApp(): Ctx {
       prNumber: clientState.prNumber,
       rightPanelTab: clientState.rightPanelTab,
       historyTab: clientState.historyTab,
-      fileFilter: clientState.fileFilter,
       activity: clientState.activity,
       toast: clientState.toast ? { kind: clientState.toast.kind, message: clientState.toast.message } : null,
       lastFetchedAt: clientState.lastFetchedAt,
@@ -329,7 +361,6 @@ export function useApp(): Ctx {
       clientState.diffFullscreen,
       clientState.diffMode,
       clientState.diffStaged,
-      clientState.fileFilter,
       clientState.historyTab,
       clientState.ignoreWhitespace,
       clientState.lastFetchedAt,

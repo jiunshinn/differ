@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
+import { deriveCloneFolderName } from '@shared/clone';
 import type { GithubAccount, Repository } from '@shared/types';
 
 interface Props {
@@ -15,13 +16,6 @@ interface Props {
   onCloned?: (repo: Repository) => void;
 }
 
-function deriveFolderName(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, '');
-  const noGit = trimmed.replace(/\.git$/i, '');
-  const parts = noGit.split(/[/:]/);
-  return (parts[parts.length - 1] || '').trim();
-}
-
 export default function CloneFromUrlDialog({
   onClose,
   initialUrl = '',
@@ -33,27 +27,32 @@ export default function CloneFromUrlDialog({
   const { dispatch, toast, refresh } = useApp();
   const [url, setUrl] = useState(initialUrl);
   const [parentDir, setParentDir] = useState<string | null>(null);
-  const [folderName, setFolderName] = useState(initialFolderName ?? deriveFolderName(initialUrl));
+  const [folderName, setFolderName] = useState(initialFolderName ?? deriveCloneFolderName(initialUrl));
   const [useToken, setUseToken] = useState(initialUseAuthToken);
   const [accounts, setAccounts] = useState<GithubAccount[]>([]);
   const [pickedAccountId, setPickedAccountId] = useState<number | null>(accountId ?? null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void api.ghAuthList().then((s) => {
-      setAccounts(s.accounts);
-      // If the caller didn't specify and there's only one account, default to it.
-      if (accountId == null && s.accounts.length === 1) {
-        setPickedAccountId(s.accounts[0].id);
-      }
-    });
-  }, [accountId]);
+    void api
+      .ghAuthList()
+      .then((s) => {
+        setAccounts(s.accounts);
+        // If the caller didn't specify and there's only one account, default to it.
+        if (accountId == null && s.accounts.length === 1) {
+          setPickedAccountId(s.accounts[0].id);
+        }
+      })
+      .catch((e) => toast('error', (e as Error).message));
+  }, [accountId, toast]);
 
   // Re-derive folder name when URL changes — but only if the user hasn't customized it.
-  const userEditedFolder = React.useRef(false);
+  // Treat an explicit initialFolderName as already-customized so the mount-time
+  // effect run does not clobber the caller-provided name.
+  const userEditedFolder = React.useRef(initialFolderName != null);
   useEffect(() => {
     if (!userEditedFolder.current) {
-      setFolderName(deriveFolderName(url));
+      setFolderName(deriveCloneFolderName(url));
     }
   }, [url]);
 
@@ -71,7 +70,7 @@ export default function CloneFromUrlDialog({
       toast('error', 'Choose a parent folder');
       return;
     }
-    const name = folderName.trim() || deriveFolderName(url);
+    const name = folderName.trim() || deriveCloneFolderName(url);
     if (!name) {
       toast('error', 'Could not determine a folder name');
       return;
@@ -114,6 +113,9 @@ export default function CloneFromUrlDialog({
         <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[520px] panel-card p-4 shadow-raised">
           <Dialog.Title className="text-base font-semibold mb-3 tracking-tight">Clone repository</Dialog.Title>
+          <Dialog.Description className="sr-only">
+            Clone a Git repository from a remote URL into a local folder.
+          </Dialog.Description>
           <div className="space-y-3">
             <label className="block">
               <div className="section-label mb-1">Remote URL</div>

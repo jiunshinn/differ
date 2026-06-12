@@ -1,11 +1,34 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import type { BasicSetupOptions } from '@uiw/react-codemirror';
 import { loadLanguage } from '@uiw/codemirror-extensions-langs';
 import type { LanguageName } from '@uiw/codemirror-extensions-langs';
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 import { EditorView, lineNumbers } from '@codemirror/view';
 import { useFileContentQuery } from '../query/hooks';
 import { useTheme } from '../utils/theme';
+
+// Hoisted to module scope so the object identity is stable across renders.
+// @uiw/react-codemirror includes the basicSetup prop in the deps of its
+// reconfigure effect, so a fresh literal each render would fully rebuild the
+// editor (extensions, highlighting, fold gutter) on every re-render.
+const BASIC_SETUP: BasicSetupOptions = {
+  // Our custom lineNumbers extension below handles clicks; disable the
+  // default to avoid two gutters.
+  lineNumbers: false,
+  foldGutter: true,
+  highlightActiveLine: false,
+  highlightActiveLineGutter: false,
+  highlightSelectionMatches: false,
+  searchKeymap: true,
+  autocompletion: false,
+  closeBrackets: false,
+  bracketMatching: true,
+  indentOnInput: false,
+  allowMultipleSelections: false,
+};
+
+const EDITOR_STYLE: React.CSSProperties = { fontSize: 13 };
 
 interface Props {
   repoId: number;
@@ -82,9 +105,14 @@ export default function CodeViewer({ repoId, filePath, onAddLineComment, onSelec
   const selectionRef = useRef(onSelectionChange);
   addCommentRef.current = onAddLineComment;
   selectionRef.current = onSelectionChange;
+  // Remember the last reported line range so we only push to the parent when it
+  // actually changes — selection drags fire a tick per pointer move, and many
+  // of those keep the same start/end line (e.g. selecting within one line).
+  const lastRangeRef = useRef<{ startLine: number; endLine: number } | null>(null);
 
   // Clear any leftover selection when switching files.
   useEffect(() => {
+    lastRangeRef.current = null;
     selectionRef.current?.(null);
   }, [filePath]);
 
@@ -104,11 +132,17 @@ export default function CodeViewer({ repoId, filePath, onAddLineComment, onSelec
         if (!u.selectionSet) return;
         const sel = u.state.selection.main;
         if (sel.empty) {
-          selectionRef.current?.(null);
+          if (lastRangeRef.current !== null) {
+            lastRangeRef.current = null;
+            selectionRef.current?.(null);
+          }
           return;
         }
         const startLine = u.state.doc.lineAt(sel.from).number;
         const endLine = u.state.doc.lineAt(sel.to).number;
+        const prev = lastRangeRef.current;
+        if (prev && prev.startLine === startLine && prev.endLine === endLine) return;
+        lastRangeRef.current = { startLine, endLine };
         selectionRef.current?.({ startLine, endLine });
       }),
     ];
@@ -157,22 +191,8 @@ export default function CodeViewer({ repoId, filePath, onAddLineComment, onSelec
           readOnly
           editable={false}
           extensions={extensions}
-          basicSetup={{
-            // Our custom lineNumbers extension above handles clicks; disable the
-            // default to avoid two gutters.
-            lineNumbers: false,
-            foldGutter: true,
-            highlightActiveLine: false,
-            highlightActiveLineGutter: false,
-            highlightSelectionMatches: false,
-            searchKeymap: true,
-            autocompletion: false,
-            closeBrackets: false,
-            bracketMatching: true,
-            indentOnInput: false,
-            allowMultipleSelections: false,
-          }}
-          style={{ fontSize: 13 }}
+          basicSetup={BASIC_SETUP}
+          style={EDITOR_STYLE}
         />
       </div>
     </div>

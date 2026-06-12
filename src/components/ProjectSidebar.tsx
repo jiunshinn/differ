@@ -36,6 +36,11 @@ export default function ProjectSidebar() {
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: number; pos: DropPos } | null>(null);
   const dragIdRef = useRef<number | null>(null);
+  // Monotonic token guarding repo switches: clicking A then B fires two
+  // concurrent openRepo IPC calls; whichever resolves LAST must not clobber the
+  // newer selection. Each switch captures the token and bails if a newer one
+  // started while its IPC was in flight.
+  const switchTokenRef = useRef(0);
   const recentError = recentQuery.error instanceof Error ? recentQuery.error.message : null;
 
   useEffect(() => {
@@ -59,8 +64,11 @@ export default function ProjectSidebar() {
 
   const switchTo = async (repo: Repository) => {
     if (state.repo?.id === repo.id) return;
+    const token = ++switchTokenRef.current;
     try {
       const r = await api.openRepo(repo.path);
+      // A newer switch started while openRepo was in flight — drop this result.
+      if (token !== switchTokenRef.current) return;
       dispatch({ type: 'setRepo', repo: r });
       dispatch({ type: 'setSession', session: null });
       dispatch({ type: 'setStatus', status: null });
@@ -68,16 +76,20 @@ export default function ProjectSidebar() {
       dispatch({ type: 'setPrNumber', n: null });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
+      if (token !== switchTokenRef.current) return;
       await recentQuery.refetch();
     } catch (e) {
+      if (token !== switchTokenRef.current) return;
       toast('error', (e as Error).message);
     }
   };
 
   const pick = async () => {
+    const token = ++switchTokenRef.current;
     try {
       const r = await api.pickRepo();
       if (!r) return;
+      if (token !== switchTokenRef.current) return;
       dispatch({ type: 'setRepo', repo: r });
       dispatch({ type: 'setSession', session: null });
       dispatch({ type: 'setStatus', status: null });
@@ -85,8 +97,10 @@ export default function ProjectSidebar() {
       dispatch({ type: 'setPrNumber', n: null });
       dispatch({ type: 'view', view: 'local' });
       await refresh();
+      if (token !== switchTokenRef.current) return;
       await recentQuery.refetch();
     } catch (e) {
+      if (token !== switchTokenRef.current) return;
       toast('error', (e as Error).message);
     }
   };

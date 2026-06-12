@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
 import { cn } from '../utils/cn';
+import { formatRelativeTime } from '../utils/date';
 import { useCommitsQuery } from '../query/hooks';
 import type { CommitSummary } from '@shared/types';
 
@@ -184,7 +185,7 @@ function CommitRow({
         {commit.authorName}
       </div>
       <div className="px-3 py-3 text-xs text-text-muted font-mono tabular-nums">
-        {formatRelative(commit.authorDate)}
+        {formatRelativeTime(commit.authorDate)}
       </div>
     </div>
   );
@@ -198,22 +199,6 @@ function Lane() {
       <span className="absolute top-3 start-[26px] w-3 h-3 rounded-full bg-accent border-2 border-bg-panel shadow-card" />
     </div>
   );
-}
-
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diff = Date.now() - t;
-  const min = Math.round(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d`;
-  const mo = Math.round(d / 30);
-  if (mo < 12) return `${mo}mo`;
-  return `${Math.round(mo / 12)}y`;
 }
 
 // ── Resolve ────────────────────────────────────────────────────────────────
@@ -268,18 +253,10 @@ function ResolveScreen() {
     <div className="h-full min-h-0 grid grid-rows-[auto_auto_minmax(0,1fr)]">
       <div className="px-3.5 py-3 border-b border-border bg-bg-panel flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-base font-semibold tracking-tight">Merge conflict resolver</h1>
+          <h1 className="text-base font-semibold tracking-tight">Merge conflicts</h1>
           <p className="text-xs text-text-muted mt-0.5">
-            Queue conflicts, compare both sides, and stage the resolved file.
+            Resolve conflicts in your editor, stage each file, then continue or abort.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="btn" onClick={() => toast('info', 'Use incoming — not yet wired')}>
-            Use incoming
-          </button>
-          <button className="btn-primary" onClick={() => toast('info', 'Stage resolution — not yet wired')}>
-            Stage resolution
-          </button>
         </div>
       </div>
 
@@ -360,69 +337,31 @@ function ResolveScreen() {
           </div>
         </aside>
 
-        <section className="panel-card grid grid-rows-[40px_minmax(0,1fr)_48px] min-h-0">
+        <section className="panel-card grid grid-rows-[40px_minmax(0,1fr)] min-h-0">
           <div className="px-3 border-b border-border bg-bg-subtle flex items-center justify-between">
             <strong className="text-sm font-semibold truncate">{activePath ?? 'No file selected'}</strong>
-            <span className="small-mono">three-way preview</span>
           </div>
-          <div className="grid grid-cols-3 min-h-0">
-            <MergePane label="Current" tag={state.status?.branch ?? 'local'} variant="remove" />
-            <MergePane label="Incoming" tag={state.status?.upstream ?? 'origin'} variant="add" />
-            <MergePane label="Resolved" tag="staged preview" variant="focus" />
-          </div>
-          <div className="px-3 border-t border-border flex items-center justify-between">
-            <span className="small-mono">Autosaved resolution draft locally</span>
-            <div className="flex items-center gap-2">
-              <button className="btn" onClick={() => toast('info', 'Reopen block — not yet wired')}>
-                Reopen block
-              </button>
-              <button className="btn-primary" onClick={() => toast('info', 'Accept and next — not yet wired')}>
-                Accept and next
-              </button>
+          <div className="min-h-0 overflow-auto p-6 flex items-center justify-center">
+            <div className="max-w-md text-center">
+              <p className="text-sm font-medium text-text-primary">In-app conflict editing isn't supported yet</p>
+              <p className="text-sm text-text-secondary mt-2">
+                {activePath ? (
+                  <>
+                    Open <span className="font-mono text-text-primary break-all">{activePath}</span> in your editor,
+                    resolve the conflict markers, then stage the file from Local Changes.
+                  </>
+                ) : (
+                  'Select a conflicted file, resolve it in your editor, then stage it from Local Changes.'
+                )}
+              </p>
+              <p className="text-xs text-text-muted mt-2">
+                Once every conflict is staged, use Continue or Abort above.
+              </p>
             </div>
           </div>
         </section>
       </div>
     </div>
-  );
-}
-
-function MergePane({
-  label,
-  tag,
-  variant,
-}: {
-  label: string;
-  tag: string;
-  variant: 'add' | 'remove' | 'focus';
-}) {
-  const bg =
-    variant === 'add'
-      ? 'bg-success/10'
-      : variant === 'remove'
-        ? 'bg-danger/10'
-        : 'bg-accent-soft';
-  return (
-    <section className="flex flex-col min-w-0 border-r border-border last:border-r-0">
-      <div className="h-8 px-3 border-b border-border bg-bg-panel flex items-center justify-between text-xs uppercase tracking-[0.07em] text-text-muted">
-        <span className="font-semibold">{label}</span>
-        <span className="font-mono normal-case tracking-normal text-text-muted">{tag}</span>
-      </div>
-      <div className="min-h-0 overflow-auto py-2 font-mono text-xs leading-6 tabular-nums">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <div
-            key={n}
-            className={cn(
-              'grid grid-cols-[40px_1fr] gap-2 px-3 whitespace-pre',
-              n === 2 || n === 3 ? bg : null,
-            )}
-          >
-            <span className="text-text-muted text-right select-none">{71 + n}</span>
-            <span className="text-text-secondary">// preview placeholder</span>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -435,6 +374,12 @@ function SyncScreen() {
   const conflicted = state.files.filter((f) => f.group === 'conflicted');
   const ahead = state.status?.ahead ?? 0;
   const behind = state.status?.behind ?? 0;
+  // With no upstream, git's `# branch.ab` header is absent so `ahead` stays 0
+  // even though the branch has unpushed commits. Treat a missing upstream as
+  // "needs publishing" and push with --set-upstream.
+  const hasUpstream = state.status?.upstream != null;
+  const needsPublish = !hasUpstream && !state.status?.detached;
+  const canPush = needsPublish || ahead > 0;
   const [busy, setBusy] = useState<string | null>(null);
 
   const run = async (
@@ -479,12 +424,17 @@ function SyncScreen() {
       state: staged.length > 0 ? 'done' : 'pending',
     },
     {
-      label: ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'}` : 'Push branch',
-      detail:
-        ahead > 0
-          ? `${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${state.status?.upstream ?? 'origin'}.`
-          : 'Nothing new to push.',
-      state: ahead > 0 ? 'active' : 'pending',
+      label: needsPublish
+        ? 'Publish branch'
+        : ahead > 0
+        ? `Push ${ahead} commit${ahead === 1 ? '' : 's'}`
+        : 'Push branch',
+      detail: needsPublish
+        ? 'No upstream set — publish this branch to the remote.'
+        : ahead > 0
+        ? `${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${state.status?.upstream ?? 'origin'}.`
+        : 'Nothing new to push.',
+      state: canPush ? 'active' : 'pending',
     },
   ];
 
@@ -524,23 +474,16 @@ function SyncScreen() {
           </button>
           <button
             className="btn-primary"
-            disabled={!!busy || ahead === 0}
+            disabled={!!busy || !canPush}
             onClick={() =>
-              run('Push', 'push', async () => {
-                try {
-                  await api.push(repo.id);
-                } catch (e) {
-                  if ((e as Error).message.includes('no upstream')) {
-                    await api.push(repo.id, { setUpstream: true });
-                  } else {
-                    throw e;
-                  }
-                }
+              run(needsPublish ? 'Publish' : 'Push', 'push', async () => {
+                // No upstream → publish with --set-upstream; otherwise a normal push.
+                await api.push(repo.id, needsPublish ? { setUpstream: true } : undefined);
                 await refresh();
               })
             }
           >
-            Push {ahead > 0 ? `${ahead}` : ''}
+            {needsPublish ? 'Publish branch' : `Push ${ahead > 0 ? `${ahead}` : ''}`}
           </button>
         </div>
       </div>

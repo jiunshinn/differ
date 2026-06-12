@@ -25,6 +25,10 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+  // GitHub's mandated polling interval (seconds). Kept in a ref so the poll
+  // closure scheduled via setTimeout always reads the current value rather than
+  // a stale `device` captured at schedule time.
+  const intervalRef = useRef(5);
 
   const reload = async () => {
     const state = await api.ghAuthList();
@@ -33,15 +37,22 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void (async () => {
-      const [state, cfg] = await Promise.all([api.ghAuthList(), api.ghOauthConfig()]);
-      setAccounts(state.accounts);
-      setOauthConfigured(cfg.configured);
+      try {
+        const [state, cfg] = await Promise.all([api.ghAuthList(), api.ghOauthConfig()]);
+        setAccounts(state.accounts);
+        setOauthConfigured(cfg.configured);
+      } catch (e) {
+        toast('error', (e as Error).message);
+      }
     })();
     return () => {
       cancelledRef.current = true;
       if (pollTimer.current) clearTimeout(pollTimer.current);
       void api.ghOauthCancel().catch(() => undefined);
     };
+    // Mount-only: the cleanup cancels any in-flight OAuth, so this must not
+    // re-run. `toast` from useApp is a stable callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startOAuth = async () => {
@@ -52,8 +63,9 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
       const code = await api.ghOauthStart();
       setDevice(code);
       setMode('oauth');
+      intervalRef.current = Math.max(1, code.interval);
       void api.openExternal(code.verificationUri).catch(() => undefined);
-      schedulePoll(code.interval);
+      schedulePoll(intervalRef.current);
     } catch (e) {
       toast('error', (e as Error).message);
       setMode('list');
@@ -80,13 +92,15 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
         return;
       }
       if (res.status === 'slow_down') {
+        // Persist the backoff so subsequent pending polls keep the slower cadence.
+        intervalRef.current = Math.max(intervalRef.current, res.nextIntervalSeconds ?? 10);
         setOauthMessage('GitHub asked to slow down. Retrying…');
-        schedulePoll(res.nextIntervalSeconds ?? 10);
+        schedulePoll(intervalRef.current);
         return;
       }
       if (res.status === 'pending') {
         setOauthMessage('Waiting for you to authorize in the browser…');
-        schedulePoll(device?.interval ?? 5);
+        schedulePoll(intervalRef.current);
         return;
       }
       if (res.status === 'expired' || res.status === 'denied' || res.status === 'error') {
@@ -180,6 +194,9 @@ export default function GithubAuthDialog({ onClose }: { onClose: () => void }) {
         <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[520px] panel-card p-4 shadow-raised">
           <Dialog.Title className="text-base font-semibold mb-3 tracking-tight">GitHub accounts</Dialog.Title>
+          <Dialog.Description className="sr-only">
+            Manage the GitHub accounts used to browse repositories and review pull requests.
+          </Dialog.Description>
 
           {mode === 'oauth' && device ? (
             <div className="space-y-3">

@@ -37,18 +37,43 @@ interface CachedClient {
 }
 
 const clients = new Map<number, CachedClient>();
+// Accounts whose stored token could not be decrypted (locked keyring, keychain
+// reset, app re-signed). Kept here so they remain visible in the UI with a
+// needsReauth flag instead of silently vanishing.
+const needsReauthAccounts = new Map<number, GithubAccount>();
 let loaded = false;
-let legacyMigrationAttempted = false;
+let migrationPromise: Promise<void> | null = null;
+
+// On Linux safeStorage can report "available" while using the trivially
+// reversible basic_text backend (no real keyring/wallet). Treat that as NOT
+// encrypted so we don't give the user a false sense of security.
+function isRealEncryptionAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string })
+    .getSelectedStorageBackend;
+  if (typeof getBackend === 'function') {
+    const backend = getBackend.call(safeStorage);
+    if (backend === 'basic_text' || backend === 'unknown') return false;
+  }
+  return true;
+}
 
 function encryptToken(token: string): { encrypted: string | null; plain: string | null } {
-  if (safeStorage.isEncryptionAvailable()) {
+  if (isRealEncryptionAvailable()) {
     return { encrypted: safeStorage.encryptString(token).toString('base64'), plain: null };
   }
+  // No OS-backed encryption: fall back to plaintext at rest. The account is
+  // flagged (tokenStoredPlaintext) so the UI can warn the user this happened.
   return { encrypted: null, plain: token };
 }
 
 function decryptStoredToken(encrypted: string | null, plain: string | null): string | null {
-  if (encrypted && safeStorage.isEncryptionAvailable()) {
+  if (encrypted) {
+    // A row holding only an encrypted token must be decrypted via safeStorage.
+    // If encryption is unavailable at load time (e.g. keyring locked) or the
+    // decrypt throws (keychain reset, app re-signed), return null so the caller
+    // can mark the account as needing re-auth rather than silently dropping it.
+    if (!safeStorage.isEncryptionAvailable()) return null;
     try {
       return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
     } catch {
@@ -84,34 +109,58 @@ async function probeUser(octokit: Octokit): Promise<UserProbeResult> {
   };
 }
 
-function rowToAccount(row: ReturnType<typeof getAccountRow> & object): GithubAccount {
+function rowToAccount(
+  row: ReturnType<typeof getAccountRow> & object,
+  extra?: { needsReauth?: boolean },
+): GithubAccount {
   return {
     id: row.id,
     login: row.login,
     avatarUrl: row.avatar_url,
     scopes: row.scopes ? row.scopes.split(',').filter(Boolean) : [],
     addedAt: row.added_at,
+    // Surfaced to the UI so the user is warned the token is at rest unencrypted.
+    tokenStoredPlaintext: row.token_plain != null,
+    needsReauth: extra?.needsReauth ?? false,
   };
 }
 
 function ensureLoaded(): void {
   if (loaded) return;
-  loaded = true;
   const rows = listAccountRows();
+  let allResolved = true;
+  needsReauthAccounts.clear();
   for (const row of rows) {
+    if (clients.has(row.id)) continue;
     const token = decryptStoredToken(row.token_encrypted, row.token_plain);
-    if (!token) continue;
+    if (!token) {
+      // Decryption failed (or encryption unavailable for an encrypted-only row).
+      // Keep the account visible with needsReauth so it does not vanish, and do
+      // not latch `loaded` — a transiently locked keyring should be retried on
+      // the next call rather than dropping the account for the whole session.
+      needsReauthAccounts.set(row.id, rowToAccount(row, { needsReauth: true }));
+      if (row.token_encrypted) allResolved = false;
+      continue;
+    }
     clients.set(row.id, {
       account: rowToAccount(row),
       octokit: buildClient(token),
       token,
     });
   }
+  // Only latch once every encrypted token resolved; otherwise retry next time.
+  if (allResolved) loaded = true;
 }
 
-async function maybeMigrateLegacyToken(): Promise<void> {
-  if (legacyMigrationAttempted) return;
-  legacyMigrationAttempted = true;
+function maybeMigrateLegacyToken(): Promise<void> {
+  // Memoize the in-flight promise so concurrent callers (e.g. two parallel
+  // listAccounts() calls at startup) await the same migration instead of one
+  // returning early and observing an empty account list mid-migration.
+  migrationPromise ??= doMigrateLegacyToken();
+  return migrationPromise;
+}
+
+async function doMigrateLegacyToken(): Promise<void> {
   ensureLoaded();
   if (clients.size > 0) return;
   const encrypted = getSetting(LEGACY_TOKEN_KEY);
@@ -144,6 +193,8 @@ function addAccountFromProbe(token: string, probe: UserProbeResult): GithubAccou
   const row = getAccountRow(probe.id);
   if (!row) throw new Error('Account row vanished after upsert');
   const account = rowToAccount(row);
+  // Re-adding a token clears any prior decrypt-failure state for this account.
+  needsReauthAccounts.delete(probe.id);
   clients.set(probe.id, {
     account,
     octokit: buildClient(token),
@@ -154,7 +205,12 @@ function addAccountFromProbe(token: string, probe: UserProbeResult): GithubAccou
 
 export async function listAccounts(): Promise<GithubAccount[]> {
   await maybeMigrateLegacyToken();
-  return Array.from(clients.values()).map((c) => c.account);
+  // Include accounts whose token failed to decrypt so they stay visible (with
+  // needsReauth) instead of disappearing from the UI.
+  return [
+    ...Array.from(clients.values()).map((c) => c.account),
+    ...Array.from(needsReauthAccounts.values()),
+  ];
 }
 
 export async function addAccount(token: string): Promise<GithubAccount> {
@@ -167,6 +223,7 @@ export async function removeAccount(accountId: number): Promise<void> {
   ensureLoaded();
   deleteAccountRow(accountId);
   clients.delete(accountId);
+  needsReauthAccounts.delete(accountId);
 }
 
 export function listReposBoundToAccount(accountId: number): number[] {
@@ -185,6 +242,12 @@ function mustClient(accountId: number): Octokit {
   ensureLoaded();
   const c = clients.get(accountId);
   if (!c) {
+    const stale = needsReauthAccounts.get(accountId);
+    if (stale) {
+      throw new Error(
+        `GitHub account @${stale.login} needs to be re-authenticated — its saved token could not be unlocked. Re-add it from the account menu in the top bar.`,
+      );
+    }
     throw new Error(
       `GitHub account ${accountId} is not signed in. Add it from the account menu in the top bar.`,
     );
@@ -207,7 +270,14 @@ export async function listPullRequests(
   const apiState = state === 'merged' ? 'closed' : state;
   const results: GithubPullRequestSummary[] = [];
 
-  for (let page = 1; page <= 5; page += 1) {
+  // 'merged' is post-filtered from the 'closed' set (the REST list endpoint has
+  // no merged filter), so a closed page can yield few/no merged PRs. Scan more
+  // pages for 'merged' so the tab is not capped at the 500 most recent closed
+  // PRs and silently truncated when recent closures are dominated by unmerged
+  // (bot/dependabot) PRs.
+  const maxPages = state === 'merged' ? 20 : 5;
+
+  for (let page = 1; page <= maxPages; page += 1) {
     const res = await client.pulls.list({
       owner,
       repo,
@@ -347,17 +417,32 @@ export async function listIssues(
   state: GithubIssueStateFilter = 'open',
 ): Promise<GithubIssueSummary[]> {
   const client = mustClient(accountId);
-  const res = await client.issues.listForRepo({
-    owner,
-    repo,
-    state,
-    per_page: 50,
-    sort: 'updated',
-    direction: 'desc',
-  });
-  return res.data
-    .filter((issue) => !issue.pull_request)
-    .map((issue) => mapIssue(issue, accountId));
+  // GitHub's issues endpoint interleaves pull requests with issues, so paginate
+  // and filter out PRs until we accumulate the desired number of real issues
+  // (mirrors the loop in listPullRequests) instead of truncating to one page.
+  const results: GithubIssueSummary[] = [];
+
+  for (let page = 1; page <= 10; page += 1) {
+    const res = await client.issues.listForRepo({
+      owner,
+      repo,
+      state,
+      per_page: 100,
+      page,
+      sort: 'updated',
+      direction: 'desc',
+    });
+
+    for (const issue of res.data) {
+      if (issue.pull_request) continue;
+      results.push(mapIssue(issue, accountId));
+      if (results.length >= 50) break;
+    }
+
+    if (results.length >= 50 || res.data.length < 100) break;
+  }
+
+  return results;
 }
 
 export async function getIssueDetail(
@@ -393,8 +478,16 @@ export async function listCheckRuns(
   ref: string,
 ): Promise<GithubCheckRun[]> {
   const client = mustClient(accountId);
-  const res = await client.checks.listForRef({ owner, repo, ref, per_page: 50 });
-  return res.data.check_runs.map((run) => ({
+  // Paginate so every check run is returned. octokit.paginate understands the
+  // `check_runs` envelope, so a monorepo with >100 checks is not silently
+  // truncated (a failing check past the cutoff would otherwise be invisible).
+  const runs = (await client.paginate(client.checks.listForRef, {
+    owner,
+    repo,
+    ref,
+    per_page: 100,
+  })) as Awaited<ReturnType<Octokit['checks']['listForRef']>>['data']['check_runs'];
+  return runs.map((run) => ({
     id: run.id,
     name: run.name,
     status: (run.status ?? 'queued') as GithubCheckRun['status'],
@@ -418,6 +511,10 @@ export async function submitReview(
     pull_number: input.prNumber,
     event: input.event,
     body: input.body,
+    // Anchor the review to the commit the reviewer actually saw. If the PR head
+    // moved between starting the review and submitting, GitHub fails loudly with
+    // a 422 instead of silently mis-anchoring comments to the latest head.
+    commit_id: input.commitId,
     comments: input.comments.map((c) => ({
       path: c.path,
       line: c.line,
@@ -468,10 +565,16 @@ function mapRepo(r: OctokitRepo, account: GithubAccount): GithubRepoSummary {
   };
 }
 
-export async function listAllRepos(): Promise<GithubRepoSummary[]> {
+export interface ListAllReposResult {
+  repos: GithubRepoSummary[];
+  errors: { accountId: number; login: string; message: string }[];
+}
+
+export async function listAllRepos(): Promise<ListAllReposResult> {
   ensureLoaded();
   await maybeMigrateLegacyToken();
   const all: GithubRepoSummary[] = [];
+  const errors: ListAllReposResult['errors'] = [];
   await Promise.all(
     Array.from(clients.values()).map(async (c) => {
       try {
@@ -484,12 +587,29 @@ export async function listAllRepos(): Promise<GithubRepoSummary[]> {
         for (const r of data as OctokitRepo[]) {
           all.push(mapRepo(r, c.account));
         }
-      } catch {
-        // Skip this account silently — the UI surfaces auth issues via the account row itself.
+      } catch (e) {
+        // Surface the failure (revoked token, 401/403 rate limit, network error)
+        // instead of silently hiding this account's repos.
+        errors.push({
+          accountId: c.account.id,
+          login: c.account.login,
+          message: describeRepoFetchError(e),
+        });
       }
     }),
   );
-  return all;
+  return { repos: all, errors };
+}
+
+function describeRepoFetchError(e: unknown): string {
+  const status = (e as { status?: number } | null)?.status;
+  if (status === 401) {
+    return 'Authentication failed — the token may be revoked or expired. Re-add the account.';
+  }
+  if (status === 403) {
+    return 'Access denied or rate limited (403). Try again in a few minutes.';
+  }
+  return (e as Error)?.message ?? 'Failed to load repositories.';
 }
 
 export async function listMyOrgs(accountId: number): Promise<GithubOwnerRef[]> {

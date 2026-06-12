@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../state/AppStore';
 import type { Repository } from '@shared/types';
@@ -14,18 +14,26 @@ export default function RepositoryPicker() {
   const [showClone, setShowClone] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
 
-  const load = async () => {
-    const list = await api.recentRepos();
-    setRecent(list);
-  };
-  const loadAuth = async () => {
-    const s = await api.ghAuthList();
-    setAuthed(s.accounts.length > 0);
-  };
+  const load = useCallback(async () => {
+    try {
+      const list = await api.recentRepos();
+      setRecent(list);
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  }, [toast]);
+  const loadAuth = useCallback(async () => {
+    try {
+      const s = await api.ghAuthList();
+      setAuthed(s.accounts.length > 0);
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  }, [toast]);
   useEffect(() => {
     void load();
     void loadAuth();
-  }, []);
+  }, [load, loadAuth]);
 
   const open = async (repo: Repository) => {
     try {
@@ -62,8 +70,12 @@ export default function RepositoryPicker() {
   };
 
   const remove = async (id: number) => {
-    await api.removeRecent(id);
-    await load();
+    try {
+      await api.removeRecent(id);
+      await load();
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
   };
 
   return (

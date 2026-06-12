@@ -43,18 +43,42 @@ let currentIsDark: boolean = resolveDark(currentMode);
 const getMode = () => currentMode;
 const getIsDark = () => currentIsDark;
 
-export function initTheme() {
+// The dark class / colorScheme are already applied before first paint by the
+// inline bootstrap script in index.html (reading the same STORAGE_KEY), so
+// initTheme only re-syncs the runtime store and registers the system-theme
+// listener. Guard against double registration so a second call (e.g. HMR or a
+// future refactor) does not stack matchMedia listeners.
+let initialized = false;
+let systemThemeListener: ((e: MediaQueryListEvent) => void) | null = null;
+let systemThemeMq: MediaQueryList | null = null;
+
+export function initTheme(): () => void {
   applyDarkClass(currentIsDark);
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return () => {};
+  if (initialized) return teardownTheme;
+  initialized = true;
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  mq.addEventListener('change', () => {
+  const onChange = (e: MediaQueryListEvent) => {
     if (currentMode !== 'system') return;
-    const nextDark = mq.matches;
+    const nextDark = e.matches;
     if (nextDark === currentIsDark) return;
     currentIsDark = nextDark;
     applyDarkClass(currentIsDark);
     notify();
-  });
+  };
+  mq.addEventListener('change', onChange);
+  systemThemeMq = mq;
+  systemThemeListener = onChange;
+  return teardownTheme;
+}
+
+function teardownTheme() {
+  if (systemThemeMq && systemThemeListener) {
+    systemThemeMq.removeEventListener('change', systemThemeListener);
+  }
+  systemThemeMq = null;
+  systemThemeListener = null;
+  initialized = false;
 }
 
 function setMode(next: ThemeMode) {

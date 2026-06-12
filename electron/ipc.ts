@@ -2,6 +2,7 @@ import type { IpcMain, Dialog, Shell, Clipboard, BrowserWindow } from 'electron'
 import { IpcChannels } from '../shared/types';
 import path from 'node:path';
 import fs from 'node:fs';
+import { deriveCloneFolderName } from '../shared/clone';
 import {
   amend,
   checkout,
@@ -21,6 +22,7 @@ import {
   parseGithubFromRemote,
   pull as gitPull,
   push as gitPush,
+  runGit,
   syncWithRemote as gitSync,
   rebaseContinue as gitRebaseContinue,
   rebaseAbort as gitRebaseAbort,
@@ -74,6 +76,7 @@ import {
 } from './services/githubOAuth';
 import type {
   CloneRequest,
+  DiffHunk,
   GithubIssueStateFilter,
   GithubPullRequestStateFilter,
   GithubSubmitReviewInput,
@@ -90,7 +93,18 @@ interface Deps {
 export function registerIpcHandlers(deps: Deps): void {
   const { ipcMain, dialog, shell, clipboard, getWindow } = deps;
   const handle = <T extends unknown[], R>(channel: string, fn: (...args: T) => Promise<R> | R): void => {
-    ipcMain.handle(channel, async (_e, ...args) => fn(...(args as T)));
+    ipcMain.handle(channel, async (_e, ...args) => {
+      try {
+        return await fn(...(args as T));
+      } catch (err) {
+        // Re-throw with a clean message so the renderer does not surface
+        // Electron's "Error invoking remote method '<channel>': Error: ..." prefix.
+        // ipcMain re-wraps thrown Errors, so we strip any such prefix the message
+        // may already carry and keep the original, user-facing text.
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(stripRemoteInvokePrefix(message));
+      }
+    });
   };
 
   handle(IpcChannels.repoPick, async () => {
@@ -203,13 +217,13 @@ export function registerIpcHandlers(deps: Deps): void {
 
   handle(IpcChannels.repoCheckout, async (repoId: number, branch: string) => {
     const repo = mustRepo(repoId);
-    await checkout(repo.path, branch);
+    await checkout(repo.path, requireRef(branch, 'branch'));
     return true;
   });
 
   handle(IpcChannels.repoCreateBranch, async (repoId: number, branch: string, doCheckout: boolean) => {
     const repo = mustRepo(repoId);
-    await createBranch(repo.path, branch, doCheckout);
+    await createBranch(repo.path, requireRef(branch, 'branch'), doCheckout);
     return true;
   });
 
@@ -225,27 +239,46 @@ export function registerIpcHandlers(deps: Deps): void {
     return true;
   });
 
-  handle(IpcChannels.repoStageHunk, async (repoId: number, filePath: string, hunkHeader: string) => {
-    const repo = mustRepo(repoId);
-    const diffs = await getDiff(repo.path, { filePath, includeUntracked: true });
-    const file = diffs.find((f) => f.filePath === filePath);
-    if (!file) throw new Error(`No unstaged changes for ${filePath}`);
-    const hunk = file.hunks.find((h) => h.header === hunkHeader);
-    if (!hunk) throw new Error(`Hunk not found in ${filePath}`);
-    await stageHunk(repo.path, file, hunk);
-    return true;
-  });
+  handle(
+    IpcChannels.repoStageHunk,
+    async (
+      repoId: number,
+      filePath: string,
+      hunkHeader: string,
+      opts?: { ignoreWhitespace?: boolean; staged?: boolean },
+    ) => {
+      const repo = mustRepo(repoId);
+      // Re-derive the diff with the SAME whitespace mode the renderer used to
+      // produce hunkHeader; otherwise -w changes hunk boundaries and the header
+      // never matches.
+      const diffs = await getDiff(repo.path, { ...opts, filePath, includeUntracked: true });
+      const file = diffs.find((f) => f.filePath === filePath);
+      if (!file) throw new Error(`No unstaged changes for ${filePath}`);
+      const hunk = findHunk(file.hunks, hunkHeader);
+      if (!hunk) throw new Error(`Hunk not found in ${filePath}`);
+      await stageHunk(repo.path, file, hunk);
+      return true;
+    },
+  );
 
-  handle(IpcChannels.repoUnstageHunk, async (repoId: number, filePath: string, hunkHeader: string) => {
-    const repo = mustRepo(repoId);
-    const diffs = await getDiff(repo.path, { filePath, staged: true });
-    const file = diffs.find((f) => f.filePath === filePath);
-    if (!file) throw new Error(`No staged changes for ${filePath}`);
-    const hunk = file.hunks.find((h) => h.header === hunkHeader);
-    if (!hunk) throw new Error(`Hunk not found in ${filePath}`);
-    await unstageHunk(repo.path, file, hunk);
-    return true;
-  });
+  handle(
+    IpcChannels.repoUnstageHunk,
+    async (
+      repoId: number,
+      filePath: string,
+      hunkHeader: string,
+      opts?: { ignoreWhitespace?: boolean; staged?: boolean },
+    ) => {
+      const repo = mustRepo(repoId);
+      const diffs = await getDiff(repo.path, { ...opts, filePath, staged: true });
+      const file = diffs.find((f) => f.filePath === filePath);
+      if (!file) throw new Error(`No staged changes for ${filePath}`);
+      const hunk = findHunk(file.hunks, hunkHeader);
+      if (!hunk) throw new Error(`Hunk not found in ${filePath}`);
+      await unstageHunk(repo.path, file, hunk);
+      return true;
+    },
+  );
 
   handle(IpcChannels.repoDiscardFile, async (repoId: number, filePath: string) => {
     const repo = mustRepo(repoId);
@@ -327,9 +360,23 @@ export function registerIpcHandlers(deps: Deps): void {
   // Comments
 
   handle(IpcChannels.commentList, async (sessionId: number) => listComments(sessionId));
-  handle(IpcChannels.commentCreate, async (input: Parameters<typeof createComment>[0]) =>
-    createComment(input),
-  );
+  handle(IpcChannels.commentCreate, async (input: Parameters<typeof createComment>[0]) => {
+    if (!input || typeof input !== 'object') throw new Error('Invalid comment payload');
+    if (!Number.isInteger(input.review_session_id)) {
+      throw new Error('Invalid comment payload: review_session_id');
+    }
+    if (typeof input.body !== 'string' || input.body.trim() === '') {
+      throw new Error('Comment body is required');
+    }
+    if (
+      input.target_kind !== 'file' &&
+      input.target_kind !== 'line' &&
+      input.target_kind !== 'hunk'
+    ) {
+      throw new Error('Invalid comment payload: target_kind');
+    }
+    return createComment(input);
+  });
   handle(IpcChannels.commentUpdate, async (id: number, patch: Parameters<typeof updateComment>[1]) =>
     updateComment(id, patch),
   );
@@ -341,9 +388,12 @@ export function registerIpcHandlers(deps: Deps): void {
   // File review state
 
   handle(IpcChannels.fileStateList, async (sessionId: number) => listFileStates(sessionId));
-  handle(IpcChannels.fileStateSet, async (sessionId: number, filePath: string, status: string) =>
-    setFileState(sessionId, filePath, status as Parameters<typeof setFileState>[2]),
-  );
+  handle(IpcChannels.fileStateSet, async (sessionId: number, filePath: string, status: string) => {
+    if (status !== 'unviewed' && status !== 'viewed' && status !== 'reviewed') {
+      throw new Error(`Invalid file review state: ${status}`);
+    }
+    return setFileState(sessionId, filePath, status);
+  });
 
   // GitHub
 
@@ -402,10 +452,20 @@ export function registerIpcHandlers(deps: Deps): void {
     const detail = await getPullRequestDetail(accountId, owner, repo, prNumber);
     // Make the PR head and base reachable locally so the diff view (origin/<base>..<headSha>)
     // resolves. Do not touch the working tree — viewing a PR should not switch branches.
-    const { runGit } = await import('./services/git');
     await runGit(['fetch', 'origin', `pull/${prNumber}/head`], { cwd: repoRow.path });
+    // Resolve the SHA we actually fetched rather than trusting the API snapshot:
+    // if the PR was force-pushed between the API call and the fetch, detail.headSha
+    // may be unreachable, so persist the fetched head to keep the session valid.
+    let headSha = detail.headSha;
+    try {
+      const resolved = await runGit(['rev-parse', 'FETCH_HEAD'], { cwd: repoRow.path });
+      const sha = resolved.stdout.trim();
+      if (sha) headSha = sha;
+    } catch {
+      // Fall back to the API snapshot if FETCH_HEAD can't be resolved.
+    }
     await runGit(['fetch', 'origin', detail.baseRef], { cwd: repoRow.path });
-    return ensurePrSession(repoId, prNumber, detail.headSha, detail.baseSha, detail.headRef, detail.baseRef);
+    return ensurePrSession(repoId, prNumber, headSha, detail.baseSha, detail.headRef, detail.baseRef);
   });
 
   handle(IpcChannels.ghPrSubmitReview, async (repoId: number, input: GithubSubmitReviewInput) => {
@@ -449,7 +509,16 @@ export function registerIpcHandlers(deps: Deps): void {
   });
 
   handle(IpcChannels.shellOpenExternal, async (url: string) => {
-    await shell.openExternal(url);
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error('Invalid URL');
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('Only http(s) links can be opened externally');
+    }
+    await shell.openExternal(parsed.toString());
     return true;
   });
 }
@@ -475,6 +544,7 @@ async function openRepoAtPath(repoPath: string, accountId: number | null = null)
 }
 
 function mustRepo(id: number): NonNullable<ReturnType<typeof getRepositoryById>> {
+  if (!Number.isInteger(id)) throw new Error('Invalid repository id');
   const r = getRepositoryById(id);
   if (!r) throw new Error(`Repository ${id} not found`);
   return r;
@@ -493,11 +563,35 @@ function mustGithubRepo(id: number): { accountId: number; owner: string; repo: s
   return { accountId: r.github_account_id, owner: r.github_owner, repo: r.github_repo };
 }
 
-function deriveCloneFolderName(remoteUrl: string): string {
-  // Strip trailing slashes and a single trailing .git
-  const trimmed = remoteUrl.trim().replace(/\/+$/, '');
-  const noGit = trimmed.replace(/\.git$/i, '');
-  // Take the last path segment after / or :
-  const parts = noGit.split(/[/:]/);
-  return (parts[parts.length - 1] || '').trim();
+// Strip Electron's "Error invoking remote method '<channel>': Error: " prefix that
+// ipcMain adds when re-serializing a thrown Error, so the renderer shows the
+// original user-facing message. Applied defensively in the handle() wrapper.
+function stripRemoteInvokePrefix(message: string): string {
+  return message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
+}
+
+// Validate a user-supplied git ref/branch name before it reaches the git layer.
+// Rejects empty values and leading-dash strings (which git would parse as options).
+function requireRef(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`A ${label} name is required`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.startsWith('-')) {
+    throw new Error(`Invalid ${label} name: ${trimmed}`);
+  }
+  return trimmed;
+}
+
+// Locate a hunk by its exact header, falling back to matching old/new start lines.
+// With ignore-whitespace on, git can emit slightly different line counts in the
+// header even when the hunk starts at the same place, so the exact string may miss.
+function findHunk(hunks: DiffHunk[], header: string): DiffHunk | undefined {
+  const exact = hunks.find((h) => h.header === header);
+  if (exact) return exact;
+  const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(header);
+  if (!match) return undefined;
+  const oldStart = parseInt(match[1], 10);
+  const newStart = parseInt(match[2], 10);
+  return hunks.find((h) => h.oldStart === oldStart && h.newStart === newStart);
 }

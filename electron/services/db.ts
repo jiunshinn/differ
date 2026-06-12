@@ -1,20 +1,77 @@
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
 
 let db: Database.Database | null = null;
 
+// Cache of prepared statements keyed by SQL text. better-sqlite3 does not cache
+// prepared statements internally, so reusing them avoids re-parsing/compiling the
+// same SQL on every call (hot paths like listComments/listFileStates fire per
+// file click). Cleared in closeDatabase().
+const statementCache = new Map<string, Database.Statement>();
+
+function openAndMigrate(dbPath: string): Database.Database {
+  const handle = new Database(dbPath);
+  handle.pragma('journal_mode = WAL');
+  handle.pragma('foreign_keys = ON');
+  applyMigrations(handle);
+  return handle;
+}
+
 export function initDatabase(): Database.Database {
   if (db) return db;
   const userDataDir = app.getPath('userData');
   fs.mkdirSync(userDataDir, { recursive: true });
   const dbPath = path.join(userDataDir, 'differ.sqlite3');
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  applyMigrations(db);
+  try {
+    db = openAndMigrate(dbPath);
+  } catch (err) {
+    // A corrupt / non-database file (SQLITE_CORRUPT / SQLITE_NOTADB) would throw
+    // on the first pragma or migration. Move the bad file aside so the app can
+    // recover on the next open instead of launching with no window.
+    const message = err instanceof Error ? err.message : String(err);
+    quarantineDatabase(dbPath);
+    try {
+      db = openAndMigrate(dbPath);
+    } catch (retryErr) {
+      const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+      try {
+        dialog.showErrorBox(
+          'Differ database error',
+          `Differ could not open its local database and was unable to recover automatically.\n\n${retryMessage}\n\nThe damaged file was moved aside in:\n${userDataDir}`,
+        );
+      } catch {
+        // dialog may be unavailable very early; the throw below still surfaces it.
+      }
+      throw retryErr;
+    }
+    try {
+      dialog.showErrorBox(
+        'Differ database reset',
+        `Differ's local database was corrupt and could not be opened, so it was reset.\n\nA backup of the damaged file was kept in:\n${userDataDir}\n\nDetails: ${message}`,
+      );
+    } catch {
+      // Ignore dialog failures; recovery already succeeded.
+    }
+  }
   return db;
+}
+
+// Move a corrupt database (and its WAL/SHM sidecars) aside so a fresh one can be
+// created. Best-effort: failures here are swallowed so the caller can still retry.
+function quarantineDatabase(dbPath: string): void {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  for (const suffix of ['', '-wal', '-shm']) {
+    const from = `${dbPath}${suffix}`;
+    try {
+      if (fs.existsSync(from)) {
+        fs.renameSync(from, `${dbPath}.corrupt-${stamp}${suffix}`);
+      }
+    } catch {
+      // Ignore; if we cannot move it, the retry open will fail and surface clearly.
+    }
+  }
 }
 
 export function getDb(): Database.Database {
@@ -22,14 +79,59 @@ export function getDb(): Database.Database {
   return db;
 }
 
+// Returns a cached prepared statement for the given SQL, preparing it once on
+// first use. Stores must use this instead of getDb().prepare(...) on hot paths.
+export function stmt(sql: string): Database.Statement {
+  let cached = statementCache.get(sql);
+  if (!cached) {
+    cached = getDb().prepare(sql);
+    statementCache.set(sql, cached);
+  }
+  return cached;
+}
+
 export function closeDatabase(): void {
   if (db) {
+    statementCache.clear();
     db.close();
     db = null;
   }
 }
 
+// Current schema version. Bump this and add a matching entry to MIGRATIONS when
+// making a non-additive schema change (a CHECK list change, NOT NULL change,
+// index change, or data transform) so existing installs are upgraded too.
+const SCHEMA_VERSION = 1;
+
+// Ordered migrations keyed by the version they produce. Each runs exactly once,
+// inside a single transaction, only when the DB's user_version is below it.
+// Migration 1 is the baseline schema (idempotent CREATE ... IF NOT EXISTS), so it
+// also adopts pre-versioning databases without rewriting their data.
+const MIGRATIONS: { version: number; up: (d: Database.Database) => void }[] = [
+  { version: 1, up: applyBaselineSchema },
+];
+
+// Guard against forgetting to register a migration for a bumped SCHEMA_VERSION.
+if (MIGRATIONS[MIGRATIONS.length - 1]?.version !== SCHEMA_VERSION) {
+  throw new Error(`MIGRATIONS is missing an entry for schema version ${SCHEMA_VERSION}`);
+}
+
 function applyMigrations(d: Database.Database): void {
+  const current = (d.pragma('user_version', { simple: true }) as number) ?? 0;
+  for (const migration of MIGRATIONS) {
+    if (migration.version <= current) continue;
+    // Run each migration's schema changes atomically. PRAGMA user_version is a
+    // no-op inside an active transaction, so it is bumped immediately after the
+    // commit: a crash before this point leaves user_version unchanged and the
+    // migration re-runs cleanly (each up() is written to be idempotent).
+    d.transaction(() => {
+      migration.up(d);
+    })();
+    d.pragma(`user_version = ${migration.version}`);
+  }
+}
+
+function applyBaselineSchema(d: Database.Database): void {
   d.exec(`
     CREATE TABLE IF NOT EXISTS repositories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,16 +208,21 @@ function applyMigrations(d: Database.Database): void {
   ensureColumn(d, 'repositories', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'repositories', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'repositories', 'github_account_id', 'INTEGER');
-  // Seed sort_order for existing rows so they keep a stable order matching last_opened_at.
+  // Seed sort_order for existing rows so they keep a stable order matching
+  // last_opened_at. A single UPDATE is atomic, so a crash mid-seed can never
+  // leave some repos seeded and others stranded at sort_order 0 (which would
+  // pin them to the top of the recents list forever). Runs only while every row
+  // is still at the default 0, so it is a no-op once any seeding has happened.
   const seeded = d
     .prepare(`SELECT COUNT(*) AS n FROM repositories WHERE sort_order != 0`)
     .get() as { n: number };
   if (seeded.n === 0) {
-    const rows = d
-      .prepare(`SELECT id FROM repositories ORDER BY last_opened_at DESC`)
-      .all() as { id: number }[];
-    const update = d.prepare(`UPDATE repositories SET sort_order = ? WHERE id = ?`);
-    rows.forEach((r, i) => update.run(i + 1, r.id));
+    d.exec(`
+      UPDATE repositories SET sort_order = (
+        SELECT COUNT(*) FROM repositories r2
+        WHERE r2.last_opened_at >= repositories.last_opened_at
+      )
+    `);
   }
 }
 
@@ -127,21 +234,19 @@ function ensureColumn(d: Database.Database, table: string, column: string, decl:
 }
 
 export function setSetting(key: string, value: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO app_settings(key, value) VALUES (?, ?)
+  stmt(
+    `INSERT INTO app_settings(key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .run(key, value);
+  ).run(key, value);
 }
 
 export function getSetting(key: string): string | null {
-  const row = getDb().prepare(`SELECT value FROM app_settings WHERE key = ?`).get(key) as
+  const row = stmt(`SELECT value FROM app_settings WHERE key = ?`).get(key) as
     | { value: string }
     | undefined;
   return row?.value ?? null;
 }
 
 export function deleteSetting(key: string): void {
-  getDb().prepare(`DELETE FROM app_settings WHERE key = ?`).run(key);
+  stmt(`DELETE FROM app_settings WHERE key = ?`).run(key);
 }

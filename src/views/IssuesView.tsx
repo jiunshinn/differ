@@ -11,6 +11,7 @@ import {
 import { api } from '../api';
 import { useAppStore } from '../state/AppStore';
 import { cn } from '../utils/cn';
+import { formatDateTime } from '../utils/date';
 import { useGithubAuthQuery, useGithubIssueDetailQuery, useGithubIssuesQuery } from '../query/hooks';
 import type {
   GithubIssueDetail,
@@ -55,11 +56,23 @@ export default function IssuesView() {
     );
   }, [issues]);
 
+  // Derive stable string messages so each effect re-toasts only when the message
+  // text changes, not on every failed refetch (Error objects get a fresh identity
+  // each time). Report each source independently so a persistent auth/list error
+  // doesn't permanently shadow a detail error.
+  const authError = authQuery.error instanceof Error ? authQuery.error.message : null;
+  const issuesError = issuesQuery.error instanceof Error ? issuesQuery.error.message : null;
+  const detailError = detailQuery.error instanceof Error ? detailQuery.error.message : null;
+
   useEffect(() => {
-    const errors = [authQuery.error, issuesQuery.error, detailQuery.error].filter(Boolean);
-    const first = errors[0];
-    if (first instanceof Error) toast('error', first.message);
-  }, [authQuery.error, detailQuery.error, issuesQuery.error, toast]);
+    if (authError) toast('error', authError);
+  }, [authError, toast]);
+  useEffect(() => {
+    if (issuesError) toast('error', issuesError);
+  }, [issuesError, toast]);
+  useEffect(() => {
+    if (detailError) toast('error', detailError);
+  }, [detailError, toast]);
 
   const filteredIssues = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -284,7 +297,7 @@ function IssueDetailPane({
               <IssueStateIcon state={issue.state} />
               <span>#{issue.number}</span>
               <span>opened by {issue.author}</span>
-              <span>updated {formatDate(issue.updatedAt)}</span>
+              <span>updated {formatDateTime(issue.updatedAt)}</span>
             </div>
             <h2 className="mt-1.5 text-lg font-semibold leading-tight">{issue.title}</h2>
           </div>
@@ -308,7 +321,7 @@ function IssueDetailPane({
       <div className="p-5 grid gap-4">
         <section className="border border-border rounded-card overflow-hidden">
           <div className="px-3 py-2 bg-bg-subtle border-b border-border small-mono">
-            {issue.author} commented {formatDate(issue.createdAt)}
+            {issue.author} commented {formatDateTime(issue.createdAt)}
           </div>
           <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap break-words">
             {loading && !detail ? (
@@ -341,7 +354,7 @@ function IssueDetailPane({
               {comments.map((comment) => (
                 <div key={comment.id} className="border-b border-border last:border-b-0">
                   <div className="px-3 py-2 bg-bg-subtle/60 border-b border-border small-mono">
-                    {comment.author} commented {formatDate(comment.createdAt)}
+                    {comment.author} commented {formatDateTime(comment.createdAt)}
                   </div>
                   <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap break-words">
                     {comment.body.trim() || <span className="text-text-muted">No comment body.</span>}
@@ -393,13 +406,4 @@ function IssueStateIcon({
 function cssLabelColor(color: string | null): string | undefined {
   if (!color || !/^[0-9a-f]{6}$/i.test(color)) return undefined;
   return `#${color}`;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
 }

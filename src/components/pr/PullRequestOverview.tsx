@@ -1,6 +1,7 @@
 import React from 'react';
 import { FileText, GitPullRequest } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { checkRunLabel, checkRunTone, summarizeChecks } from '../../utils/checkRuns';
 import type { FileDiff, GithubCheckRun, GithubPullRequestDetail } from '@shared/types';
 
 export function ActivityView({
@@ -15,13 +16,7 @@ export function ActivityView({
   loading: boolean;
 }) {
   const body = detail.body.trim();
-  const passingChecks = checks.filter((check) => check.conclusion === 'success').length;
-  const failingChecks = checks.filter(
-    (check) =>
-      check.conclusion === 'failure' ||
-      check.conclusion === 'timed_out' ||
-      check.conclusion === 'action_required',
-  ).length;
+  const { passed: passingChecks, failed: failingChecks } = summarizeChecks(checks);
 
   return (
     <main className="min-h-0 overflow-auto bg-bg px-6 py-5">
@@ -111,13 +106,7 @@ export function PrSummaryPanel({
   commentCount: number;
   onSubmit: () => void;
 }) {
-  const passed = checks.filter((check) => check.conclusion === 'success').length;
-  const failed = checks.filter(
-    (check) =>
-      check.conclusion === 'failure' ||
-      check.conclusion === 'timed_out' ||
-      check.conclusion === 'action_required',
-  ).length;
+  const { passed, failed } = summarizeChecks(checks);
   const statusText = detail.isDraft ? 'Draft' : detail.state === 'open' ? 'Open' : detail.state;
 
   return (
@@ -215,14 +204,7 @@ function SummaryRow({
 }
 
 function CheckRow({ check, compact = false }: { check: GithubCheckRun; compact?: boolean }) {
-  const tone =
-    check.conclusion === 'success'
-      ? 'success'
-      : check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'action_required'
-      ? 'danger'
-      : check.status !== 'completed'
-      ? 'warn'
-      : 'neutral';
+  const tone = checkRunTone(check);
   const dot =
     tone === 'success'
       ? 'bg-success'
@@ -231,7 +213,7 @@ function CheckRow({ check, compact = false }: { check: GithubCheckRun; compact?:
       : tone === 'warn'
       ? 'bg-warn'
       : 'bg-text-muted';
-  const label = check.status !== 'completed' ? check.status.replace('_', ' ') : check.conclusion ?? 'completed';
+  const label = checkRunLabel(check);
   return (
     <div
       className={cn(

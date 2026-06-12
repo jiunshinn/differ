@@ -5,6 +5,7 @@ import { api } from '../api';
 import BranchMenu from './BranchMenu';
 import GithubAuthDialog from './GithubAuthDialog';
 import { cn } from '../utils/cn';
+import { formatRelativeTime } from '../utils/date';
 import { useTheme, type ThemeMode } from '../utils/theme';
 import { useGithubAuthQuery, useRepoCommandMutation } from '../query/hooks';
 import type { GithubAccount } from '@shared/types';
@@ -129,8 +130,10 @@ export default function TopBar() {
                     <span
                       className="text-[10px] text-text-muted"
                       title={new Date(state.lastFetchedAt).toLocaleString()}
+                      // `now` keys the span so the 15s tick re-evaluates the relative label.
+                      key={now}
                     >
-                      {formatAgo(now - state.lastFetchedAt)}
+                      fetched {formatRelativeTime(new Date(state.lastFetchedAt).toISOString())} ago
                     </span>
                   )}
                 </>
@@ -357,7 +360,14 @@ function SyncButton({ busy, run, refresh, repoId, status, dispatch }: SyncButton
         } catch (e) {
           const msg = (e as Error).message;
           if (/no upstream/i.test(msg)) {
-            await api.push(repoId, { setUpstream: true });
+            // Retry with --set-upstream, but route any failure through the same
+            // friendly-error/conflict handler the rest of this component uses
+            // (never surface raw git stderr).
+            try {
+              await api.push(repoId, { setUpstream: true });
+            } catch (e2) {
+              await handleError((e2 as Error).message);
+            }
           } else {
             await handleError(msg);
           }
@@ -389,15 +399,6 @@ function SyncButton({ busy, run, refresh, repoId, status, dispatch }: SyncButton
       {labels[mode]}
     </button>
   );
-}
-
-function formatAgo(ms: number): string {
-  const sec = Math.max(1, Math.floor(ms / 1000));
-  if (sec < 60) return `fetched ${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `fetched ${min}m ago`;
-  const hr = Math.floor(min / 60);
-  return `fetched ${hr}h ago`;
 }
 
 function ThemeToggle() {

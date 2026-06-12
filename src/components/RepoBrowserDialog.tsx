@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { GithubRepoSummary } from '@shared/types';
 import CloneFromUrlDialog from './CloneFromUrlDialog';
+import { formatDate } from '../utils/date';
 import {
   useGithubAuthQuery,
   useGithubOrgReposQuery,
@@ -36,10 +37,13 @@ export default function RepoBrowserDialog({ onClose }: Props) {
 
   const repos = useMemo(() => {
     if (scope.kind === 'org') return orgReposQuery.data ?? [];
-    const all = allReposQuery.data ?? [];
+    const all = allReposQuery.data?.repos ?? [];
     if (scope.kind === 'account') return all.filter((r) => r.accountId === scope.accountId);
     return all;
   }, [allReposQuery.data, orgReposQuery.data, scope]);
+  // Per-account fetch failures (revoked token, rate limit) are surfaced rather
+  // than silently dropping that account's repos.
+  const accountErrors = scope.kind === 'org' ? [] : allReposQuery.data?.errors ?? [];
   const queryError =
     authQuery.error instanceof Error
       ? authQuery.error.message
@@ -47,11 +51,14 @@ export default function RepoBrowserDialog({ onClose }: Props) {
       ? allReposQuery.error.message
       : orgReposQuery.error instanceof Error
       ? orgReposQuery.error.message
+      : orgsQuery.error instanceof Error
+      ? orgsQuery.error.message
       : null;
   const error =
     queryError ??
     (authQuery.isSuccess && accounts.length === 0 ? 'Add a GitHub account first (top-right account menu).' : null);
-  const loading = authQuery.isLoading || allReposQuery.isFetching || orgReposQuery.isFetching;
+  const loading =
+    authQuery.isLoading || allReposQuery.isFetching || orgReposQuery.isFetching || orgsQuery.isFetching;
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return repos;
@@ -90,6 +97,9 @@ export default function RepoBrowserDialog({ onClose }: Props) {
             <Dialog.Title className="text-base font-semibold tracking-tight mb-2">
               Browse your GitHub repositories
             </Dialog.Title>
+            <Dialog.Description className="sr-only">
+              Pick a repository to clone from your GitHub accounts and organizations.
+            </Dialog.Description>
             <div className="flex gap-2 items-center flex-wrap">
               <button
                 className={scope.kind === 'all' ? 'chip-selected' : 'chip'}
@@ -149,6 +159,11 @@ export default function RepoBrowserDialog({ onClose }: Props) {
 
           <div className="flex-1 overflow-auto px-2 py-2">
             {error && <div className="px-3 py-2 text-sm text-danger">{error}</div>}
+            {accountErrors.map((e) => (
+              <div key={e.accountId} className="px-3 py-2 text-sm text-warn">
+                Couldn’t load repos for @{e.login}: {e.message}
+              </div>
+            ))}
             {loading && <div className="px-3 py-2 text-sm text-text-muted">Loading…</div>}
             {!loading && !error && filtered.length === 0 && (
               <div className="px-3 py-6 text-sm text-text-muted text-center">No repositories.</div>
@@ -220,13 +235,4 @@ function AccountBadge({
       {showLabel && <span className="text-[10px]">@{login}</span>}
     </span>
   );
-}
-
-function formatDate(iso: string): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString();
-  } catch {
-    return iso.slice(0, 10);
-  }
 }

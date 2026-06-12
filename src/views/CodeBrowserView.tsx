@@ -21,6 +21,7 @@ export default function CodeBrowserView() {
   const fileComments = selected ? state.comments.filter((c) => c.file_path === selected) : [];
 
   return (
+    <>
     <ResizableLayout
       storageKey="code-browser"
       className="h-full w-full min-h-0 bg-bg-panel"
@@ -82,6 +83,7 @@ export default function CodeBrowserView() {
           <FileCommentsStrip comments={fileComments} />
         )}
       </section>
+    </ResizableLayout>
 
       {composer && sessionId && selected && (
         <CommentComposer
@@ -93,7 +95,7 @@ export default function CodeBrowserView() {
           onClose={() => setComposer(null)}
         />
       )}
-    </ResizableLayout>
+    </>
   );
 }
 

@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useApp, type ActivityEvent, type ActivityKind } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
+import { formatTime } from '../utils/date';
+import { checkRunLabel, checkRunTone } from '../utils/checkRuns';
 import {
   useDeleteCommentMutation,
   useGithubPullRequestChecksQuery,
@@ -128,18 +130,16 @@ function LocalStateCard() {
 }
 
 function ChecksCard() {
-  const { state, toast } = useApp();
+  const { state } = useApp();
   const repo = state.repo!;
   const session = state.session;
   const ref = session?.head_sha;
   const checksQuery = useGithubPullRequestChecksQuery(repo.id, ref);
   const checks = checksQuery.data ?? null;
   const loading = checksQuery.isFetching;
+  // The error is rendered inline below; do not also toast it (the toast would
+  // re-fire on every Overview-tab remount from the cached error state).
   const error = checksQuery.error instanceof Error ? checksQuery.error.message : null;
-
-  useEffect(() => {
-    if (error) toast('error', error);
-  }, [error, toast]);
 
   return (
     <section className="panel-card">
@@ -172,14 +172,7 @@ function ChecksCard() {
 }
 
 function CheckRow({ run }: { run: GithubCheckRun }) {
-  const tone =
-    run.conclusion === 'success'
-      ? 'success'
-      : run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'action_required'
-      ? 'danger'
-      : run.status !== 'completed'
-      ? 'warn'
-      : 'neutral';
+  const tone = checkRunTone(run);
   const dotClass =
     tone === 'success'
       ? 'bg-success'
@@ -188,10 +181,7 @@ function CheckRow({ run }: { run: GithubCheckRun }) {
       : tone === 'warn'
       ? 'bg-warn'
       : 'bg-text-muted';
-  const label =
-    run.status !== 'completed'
-      ? run.status.replace('_', ' ')
-      : run.conclusion ?? 'completed';
+  const label = checkRunLabel(run);
   return (
     <div className="flex items-center justify-between gap-2 min-h-[38px] px-3 py-2 border-b last:border-b-0 border-border">
       <span className="flex items-center text-sm truncate">
@@ -261,7 +251,7 @@ function TimelineRow({ event }: { event: ActivityEvent }) {
         <p className="m-0 text-sm">{event.message}</p>
         <div className="mt-0.5 small-mono truncate">
           {event.detail ? `${event.detail} · ` : ''}
-          {new Date(event.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+          {formatTime(new Date(event.at).toISOString())}
         </div>
       </div>
     </div>
@@ -327,6 +317,13 @@ function CommentsTab() {
       toast('error', (e as Error).message);
     }
   };
+  const onChangeLabel = async (id: number, label: CommentLabel) => {
+    try {
+      await updateComment.mutateAsync({ id, patch: { label } });
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  };
   const select = (filePath: string) => dispatch({ type: 'setSelectedFile', filePath });
 
   return (
@@ -377,7 +374,10 @@ function CommentsTab() {
                   <button className="btn-ghost h-7 text-[11px] px-2" onClick={() => void onResolve(c)}>
                     {c.status === 'open' ? 'Resolve' : 'Reopen'}
                   </button>
-                  <LabelChooser comment={c} />
+                  <LabelChooser
+                    value={c.label ?? null}
+                    onChange={(label) => void onChangeLabel(c.id, label)}
+                  />
                   <button
                     className="btn-ghost h-7 text-[11px] px-2 text-danger"
                     onClick={() => void onDelete(c.id)}
@@ -394,21 +394,18 @@ function CommentsTab() {
   );
 }
 
-function LabelChooser({ comment }: { comment: ReviewComment }) {
-  const { state, toast } = useApp();
-  const updateComment = useUpdateCommentMutation(state.session?.id ?? null);
-  const onChange = async (label: CommentLabel) => {
-    try {
-      await updateComment.mutateAsync({ id: comment.id, patch: { label } });
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
+function LabelChooser({
+  value,
+  onChange,
+}: {
+  value: CommentLabel;
+  onChange: (label: CommentLabel) => void;
+}) {
   return (
     <select
       className="bg-bg-panel border border-border rounded-md text-[11px] py-1 px-1.5"
-      value={comment.label ?? ''}
-      onChange={(e) => void onChange((e.target.value || null) as CommentLabel)}
+      value={value ?? ''}
+      onChange={(e) => onChange((e.target.value || null) as CommentLabel)}
     >
       <option value="">(no label)</option>
       <option value="issue">issue</option>

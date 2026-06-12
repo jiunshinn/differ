@@ -19,7 +19,11 @@ interface ActiveFlow {
   deviceCode: string;
   expiresAt: number; // epoch ms
   minIntervalMs: number; // last-known polling interval (server may bump via slow_down)
+  lastPollAt: number; // epoch ms of the last token-poll request to GitHub
   scopes: string[];
+  // A granted access token that we received but could not yet durably persist
+  // (probeUser failed transiently). Retried on the next poll instead of dropped.
+  pendingToken: string | null;
 }
 
 let activeFlow: ActiveFlow | null = null;
@@ -88,10 +92,14 @@ export async function startDeviceFlow(): Promise<GithubDeviceCode> {
     deviceCode: data.device_code,
     expiresAt: Date.now() + expiresIn * 1000,
     minIntervalMs: interval * 1000,
+    lastPollAt: 0,
     scopes,
+    pendingToken: null,
   };
+  // Note: device_code is intentionally NOT returned to the renderer — it is a
+  // credential (combined with the public client_id it can mint the access
+  // token). The main process keeps it in activeFlow and pollDeviceFlow uses it.
   return {
-    deviceCode: data.device_code,
     userCode: data.user_code,
     verificationUri: data.verification_uri,
     expiresIn,
@@ -112,6 +120,24 @@ export async function pollDeviceFlow(): Promise<GithubOAuthPollResult> {
     activeFlow = null;
     return { status: 'expired', error: 'The device code expired. Start sign-in again.' };
   }
+
+  const intervalSeconds = Math.ceil(flow.minIntervalMs / 1000);
+
+  // Enforce the (possibly raised) polling interval. If called too soon, return
+  // pending without hitting GitHub (or re-probing) so we never trip slow_down
+  // repeatedly.
+  if (Date.now() < flow.lastPollAt + flow.minIntervalMs) {
+    return { status: 'pending', nextIntervalSeconds: intervalSeconds };
+  }
+  flow.lastPollAt = Date.now();
+
+  // If a previous poll obtained the access token but could not persist it (a
+  // transient probeUser failure), retry persisting instead of polling GitHub
+  // again — the token is already granted.
+  if (flow.pendingToken) {
+    return persistGrantedToken(flow, flow.pendingToken, intervalSeconds);
+  }
+
   let res: Response;
   try {
     res = await fetch(ACCESS_TOKEN_URL, {
@@ -142,17 +168,11 @@ export async function pollDeviceFlow(): Promise<GithubOAuthPollResult> {
     interval?: number;
   };
   if (data.access_token) {
-    activeFlow = null;
-    try {
-      const account = await addAccount(data.access_token);
-      return { status: 'authorized', account };
-    } catch (e) {
-      return { status: 'error', error: (e as Error).message };
-    }
+    return persistGrantedToken(flow, data.access_token, intervalSeconds);
   }
   switch (data.error) {
     case 'authorization_pending':
-      return { status: 'pending' };
+      return { status: 'pending', nextIntervalSeconds: intervalSeconds };
     case 'slow_down': {
       const next = Math.max(1, data.interval ?? 5);
       flow.minIntervalMs = next * 1000;
@@ -169,6 +189,27 @@ export async function pollDeviceFlow(): Promise<GithubOAuthPollResult> {
         status: 'error',
         error: data.error_description || data.error || 'Unknown OAuth error',
       };
+  }
+}
+
+// Persist a granted access token. If addAccount (which probes GET /user) fails
+// transiently, keep the token in the flow's pendingToken so the next poll can
+// retry rather than discarding an already-authorized grant and forcing the user
+// to redo the whole device flow.
+async function persistGrantedToken(
+  flow: ActiveFlow,
+  token: string,
+  intervalSeconds: number,
+): Promise<GithubOAuthPollResult> {
+  try {
+    const account = await addAccount(token);
+    activeFlow = null;
+    return { status: 'authorized', account };
+  } catch (e) {
+    flow.pendingToken = token;
+    // Treat as transient: report pending so the renderer keeps polling and we
+    // retry persisting on the next tick.
+    return { status: 'pending', nextIntervalSeconds: intervalSeconds, error: (e as Error).message };
   }
 }
 

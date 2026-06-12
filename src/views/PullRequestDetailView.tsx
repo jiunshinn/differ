@@ -1,23 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   CircleDot,
   ExternalLink,
-  FileText,
   GitPullRequest,
   MessageSquare,
 } from 'lucide-react';
 import { useApp } from '../state/AppStore';
 import { api } from '../api';
 import { cn } from '../utils/cn';
+import { formatDateTime } from '../utils/date';
 import CommentComposer from '../components/CommentComposer';
 import ResizableLayout from '../components/ResizableLayout';
 import { ActivityView, PrSummaryPanel } from '../components/pr/PullRequestOverview';
 import {
   useAllDiffQuery,
+  useDeleteCommentMutation,
   useGithubPullRequestChecksQuery,
   useGithubPullRequestDetailQuery,
+  useUpdateCommentMutation,
 } from '../query/hooks';
-import type { FileDiff, GithubCheckRun, GithubPullRequestDetail, GithubReviewEvent } from '@shared/types';
+import { queryKeys } from '../query/keys';
+import type { FileDiff, GithubCheckRun, GithubPullRequestDetail, GithubReviewEvent, ReviewComment } from '@shared/types';
 
 type PrTab = 'activity' | 'diff';
 const EMPTY_DIFFS: FileDiff[] = [];
@@ -66,6 +70,11 @@ export default function PullRequestDetailView() {
   }, [loadError, toast]);
 
   useEffect(() => {
+    // Don't disturb the current selection while a refetch is in flight (a new
+    // query key — e.g. the author pushed a new headSha — briefly yields an empty
+    // diff list before the data arrives). Only re-anchor once the diff list has
+    // actually loaded.
+    if (diffsQuery.isPending) return;
     if (!diffs.length) {
       setSelectedPath(null);
       return;
@@ -73,9 +82,28 @@ export default function PullRequestDetailView() {
     setSelectedPath((current) =>
       current && diffs.some((diff) => diff.filePath === current) ? current : diffs[0].filePath,
     );
-  }, [diffs]);
+  }, [diffs, diffsQuery.isPending]);
 
   const selectedDiff = useMemo(() => diffs.find((d) => d.filePath === selectedPath) ?? null, [diffs, selectedPath]);
+  const selectedDiffPath = selectedDiff?.filePath ?? null;
+
+  const onLineComment = useCallback(
+    (side: 'old' | 'new', line: number, hunkHeader: string) => {
+      if (selectedDiffPath) setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiffPath });
+    },
+    [selectedDiffPath],
+  );
+  const onHunkComment = useCallback(
+    (hunkHeader: string) => {
+      if (selectedDiffPath)
+        setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiffPath });
+    },
+    [selectedDiffPath],
+  );
+  const onFileComment = useCallback(() => {
+    if (selectedDiffPath)
+      setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiffPath });
+  }, [selectedDiffPath]);
 
   if (!repo || !prNumber) {
     return <div className="p-6 text-text-muted">Open a review from the list.</div>;
@@ -181,15 +209,10 @@ export default function PullRequestDetailView() {
           ) : selectedDiff ? (
             <PrFileDiff
               diff={selectedDiff}
-              onLineComment={(side, line, hunkHeader) =>
-                setComposer({ target: 'line', side, line, hunkHeader, filePath: selectedDiff.filePath })
-              }
-              onHunkComment={(hunkHeader) =>
-                setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader, filePath: selectedDiff.filePath })
-              }
-              onFileComment={() =>
-                setComposer({ target: 'file', side: 'none', line: null, hunkHeader: null, filePath: selectedDiff.filePath })
-              }
+              comments={state.comments}
+              onLineComment={onLineComment}
+              onHunkComment={onHunkComment}
+              onFileComment={onFileComment}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-text-muted">Select a file.</div>
@@ -234,19 +257,41 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function PrFileDiff({
+function lineCommentKey(side: 'old' | 'new', lineNumber: number): string {
+  return `${side}:${lineNumber}`;
+}
+
+const PrFileDiff = React.memo(function PrFileDiff({
   diff,
+  comments: allComments,
   onLineComment,
   onHunkComment,
   onFileComment,
 }: {
   diff: FileDiff;
+  comments: ReviewComment[];
   onLineComment: (side: 'old' | 'new', line: number, hunkHeader: string) => void;
   onHunkComment: (hunkHeader: string) => void;
   onFileComment: () => void;
 }) {
-  const { state } = useApp();
-  const comments = state.comments.filter((c) => c.file_path === diff.filePath);
+  const comments = useMemo(
+    () => allComments.filter((c) => c.file_path === diff.filePath),
+    [allComments, diff.filePath],
+  );
+  // Index line comments by side:lineNumber so they can render inline beneath the
+  // line they annotate (these were saved but previously never displayed here).
+  const lineCommentMap = useMemo(() => {
+    const out = new Map<string, ReviewComment[]>();
+    for (const c of comments) {
+      if (c.target_kind !== 'line' || c.line_number == null) continue;
+      if (c.diff_side !== 'old' && c.diff_side !== 'new') continue;
+      const key = lineCommentKey(c.diff_side, c.line_number);
+      const arr = out.get(key) ?? [];
+      arr.push(c);
+      out.set(key, arr);
+    }
+    return out;
+  }, [comments]);
   const baseName = diff.filePath.split('/').pop() ?? diff.filePath;
   const dirName = diff.filePath.includes('/') ? diff.filePath.slice(0, diff.filePath.lastIndexOf('/')) : '';
   return (
@@ -289,39 +334,40 @@ function PrFileDiff({
                   const side: 'old' | 'new' | null =
                     l.kind === 'del' ? 'old' : l.kind === 'add' ? 'new' : null;
                   const lineNumber = side === 'old' ? l.oldLineNumber : side === 'new' ? l.newLineNumber : null;
+                  const inlineComments =
+                    side && lineNumber != null ? lineCommentMap.get(lineCommentKey(side, lineNumber)) ?? [] : [];
                   return (
-                    <div
-                      key={idx}
-                      className={cn('diff-line group', cls)}
-                      onDoubleClick={() => {
-                        if (side && lineNumber != null) onLineComment(side, lineNumber, h.header);
-                      }}
-                    >
-                      <div className="gut">{l.oldLineNumber ?? ''}</div>
-                      <div className="gut">{l.newLineNumber ?? ''}</div>
-                      <div className="body relative">
-                        {l.content}
-                        {side && lineNumber != null && (
-                          <button
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md border border-border bg-bg-panel grid place-items-center text-[10px] text-text-muted hover:text-accent"
-                            onClick={() => onLineComment(side, lineNumber, h.header)}
-                          >
-                            +
-                          </button>
-                        )}
+                    <React.Fragment key={idx}>
+                      <div
+                        className={cn('diff-line group', cls, inlineComments.length && 'has-comment')}
+                        onDoubleClick={() => {
+                          if (side && lineNumber != null) onLineComment(side, lineNumber, h.header);
+                        }}
+                      >
+                        <div className="gut">{l.oldLineNumber ?? ''}</div>
+                        <div className="gut">{l.newLineNumber ?? ''}</div>
+                        <div className="body relative">
+                          {l.content}
+                          {side && lineNumber != null && (
+                            <button
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md border border-border bg-bg-panel grid place-items-center text-[10px] text-text-muted hover:text-accent"
+                              onClick={() => onLineComment(side, lineNumber, h.header)}
+                            >
+                              +
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                      {inlineComments.map((c) => (
+                        <PrInlineComment key={c.id} comment={c} kind="line" />
+                      ))}
+                    </React.Fragment>
                   );
                 })}
                 {comments
                   .filter((c) => c.target_kind === 'hunk' && c.hunk_header === h.header)
                   .map((c) => (
-                    <div key={c.id} className="px-3 py-2 bg-bg-subtle text-sm border-t border-border">
-                      <div className="small-mono mb-1">
-                        hunk · {new Date(c.created_at).toLocaleString()}
-                      </div>
-                      {c.body}
-                    </div>
+                    <PrInlineComment key={c.id} comment={c} kind="hunk" />
                   ))}
             </article>
           ))
@@ -329,13 +375,78 @@ function PrFileDiff({
         {comments
           .filter((c) => c.target_kind === 'file')
           .map((c) => (
-            <div key={c.id} className="panel-card px-3 py-3 text-sm">
-              <div className="small-mono mb-1">file · {new Date(c.created_at).toLocaleString()}</div>
-              {c.body}
-            </div>
+            <PrInlineComment key={c.id} comment={c} kind="file" />
           ))}
       </div>
     </section>
+  );
+});
+
+function PrInlineComment({ comment, kind }: { comment: ReviewComment; kind: 'line' | 'hunk' | 'file' }) {
+  const { state, toast, logActivity } = useApp();
+  const sessionId = state.session?.id ?? null;
+  const updateComment = useUpdateCommentMutation(sessionId);
+  const deleteComment = useDeleteCommentMutation(sessionId);
+  const resolved = comment.status === 'resolved';
+
+  const label =
+    kind === 'line'
+      ? `line ${comment.diff_side === 'old' ? '−' : '+'}${comment.line_number}`
+      : kind === 'hunk'
+      ? 'hunk'
+      : 'file';
+
+  const toggleResolve = async () => {
+    try {
+      await updateComment.mutateAsync({ id: comment.id, patch: { status: resolved ? 'open' : 'resolved' } });
+      logActivity({
+        kind: 'comment_resolved',
+        message: resolved ? 'Reopened comment' : 'Resolved comment',
+        detail: comment.file_path,
+      });
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  };
+  const remove = async () => {
+    try {
+      await deleteComment.mutateAsync(comment.id);
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  };
+
+  const wrapperCls =
+    kind === 'file'
+      ? 'panel-card px-3 py-2.5 text-sm'
+      : 'px-3 py-2.5 bg-bg-subtle text-sm border-t border-border';
+  return (
+    <div className={wrapperCls}>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="small-mono">
+          {label} · {formatDateTime(comment.created_at)}
+          {comment.label && <span className="ml-1 chip">{comment.label}</span>}
+          {resolved && <span className="ml-1 chip text-success border-success/30">resolved</span>}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <button
+            className="btn-ghost h-6 text-[11px] px-2"
+            onClick={() => void toggleResolve()}
+            disabled={updateComment.isPending}
+          >
+            {resolved ? 'Reopen' : 'Resolve'}
+          </button>
+          <button
+            className="btn-ghost h-6 text-[11px] px-2 text-text-muted hover:text-danger"
+            onClick={() => void remove()}
+            disabled={deleteComment.isPending}
+          >
+            Delete
+          </button>
+        </span>
+      </div>
+      <div className="whitespace-pre-wrap break-words">{comment.body}</div>
+    </div>
   );
 }
 
@@ -346,11 +457,17 @@ function SubmitReviewDialog({
   detail: GithubPullRequestDetail;
   onClose: () => void;
 }) {
-  const { state, toast, loadComments } = useApp();
+  const { state, toast } = useApp();
+  const queryClient = useQueryClient();
+  const sessionId = state.session?.id ?? null;
   const [body, setBody] = useState('');
   const [event, setEvent] = useState<GithubReviewEvent>('COMMENT');
   const [selectedCommentIds, setSelectedCommentIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  // Once GitHub has accepted the review, a failed local-resolution step must NOT
+  // re-post it. Remember which comment ids were already submitted so a retry only
+  // re-runs the (idempotent) local resolve step.
+  const submittedRef = React.useRef<number[] | null>(null);
 
   const lineComments = useMemo(
     () =>
@@ -381,21 +498,37 @@ function SubmitReviewDialog({
     if (!state.repo) return;
     setBusy(true);
     try {
-      await api.ghPrSubmitReview(state.repo.id, {
-        prNumber: detail.number,
-        event,
-        body,
-        comments: selectedLineComments.map((c) => ({
-          path: c.file_path,
-          line: c.line_number ?? 1,
-          side: c.diff_side === 'old' ? 'LEFT' : 'RIGHT',
-          body: c.body,
-        })),
-      });
-      for (const c of selectedLineComments) {
-        await api.updateComment(c.id, { status: 'resolved' });
+      // Step 1 — post the review to GitHub exactly once. If a previous attempt
+      // already succeeded but the local resolve step failed, skip the re-post.
+      if (submittedRef.current == null) {
+        await api.ghPrSubmitReview(state.repo.id, {
+          prNumber: detail.number,
+          event,
+          body,
+          // Anchor the review to the head sha that was actually reviewed.
+          commitId: detail.headSha,
+          comments: selectedLineComments.map((c) => ({
+            path: c.file_path,
+            line: c.line_number ?? 1,
+            side: c.diff_side === 'old' ? 'LEFT' : 'RIGHT',
+            body: c.body,
+          })),
+        });
+        submittedRef.current = selectedLineComments.map((c) => c.id);
       }
-      await loadComments();
+      // Step 2 — mark the submitted comments resolved locally. Don't let one
+      // failed update abort the rest, and surface a partial failure to the user.
+      const ids = submittedRef.current;
+      const results = await Promise.allSettled(
+        ids.map((id) => api.updateComment(id, { status: 'resolved' })),
+      );
+      if (sessionId != null) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.session.comments(sessionId) });
+      }
+      if (results.some((r) => r.status === 'rejected')) {
+        toast('error', 'Review submitted, but some comments could not be marked resolved. Retry.');
+        return;
+      }
       toast('success', `Review submitted (${event})`);
       onClose();
     } catch (e) {

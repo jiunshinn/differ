@@ -103,7 +103,20 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
   toast: null,
   lastFetchedAt: null,
 
-  setView: (view) => set({ view }),
+  setView: (view) =>
+    set((state) => {
+      // Views that operate on the repo's LOCAL review session. When navigating
+      // to one of these, drop any lingering PR review session so refresh()
+      // re-resolves the local session instead of reusing the PR one.
+      const localSessionView = view === 'local' || view === 'code' || view === 'history';
+      const isPrSession =
+        state.session != null &&
+        (state.session.kind === 'pull_request' || state.session.github_pr_number != null);
+      if (localSessionView && isPrSession) {
+        return { view, session: null, selectedFile: null };
+      }
+      return { view };
+    }),
   setRepo: (repo) =>
     set({
       repo,
@@ -111,6 +124,12 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
       selectedFile: null,
       prNumber: null,
       lastFetchedAt: null,
+      // Reset per-repo UI so state does not leak across repositories.
+      fileFilter: '',
+      diffStaged: false,
+      rightPanelTab: 'overview',
+      historyTab: 'graph',
+      activity: [],
     }),
   setSession: (session) => set({ session }),
   setSelectedFile: (selectedFile) => set({ selectedFile }),
@@ -149,36 +168,3 @@ export const useAppStore = create<AppClientStore>()((set, get) => ({
       return { toast: null };
     }),
 }));
-
-export const appSelectors = {
-  view: (state: AppClientStore) => state.view,
-  repo: (state: AppClientStore) => state.repo,
-  repoId: (state: AppClientStore) => state.repo?.id ?? null,
-  session: (state: AppClientStore) => state.session,
-  sessionId: (state: AppClientStore) => state.session?.id ?? null,
-  selectedFile: (state: AppClientStore) => state.selectedFile,
-  diffOptions: (state: AppClientStore) => ({
-    diffMode: state.diffMode,
-    diffStaged: state.diffStaged,
-    diffFullscreen: state.diffFullscreen,
-    ignoreWhitespace: state.ignoreWhitespace,
-  }),
-  toast: (state: AppClientStore) => state.toast,
-  actions: (state: AppClientStore) => ({
-    setView: state.setView,
-    setRepo: state.setRepo,
-    setSession: state.setSession,
-    setSelectedFile: state.setSelectedFile,
-    setDiffMode: state.setDiffMode,
-    setDiffStaged: state.setDiffStaged,
-    setDiffFullscreen: state.setDiffFullscreen,
-    setIgnoreWhitespace: state.setIgnoreWhitespace,
-    setPrNumber: state.setPrNumber,
-    setRightPanelTab: state.setRightPanelTab,
-    setHistoryTab: state.setHistoryTab,
-    setFileFilter: state.setFileFilter,
-    setLastFetchedAt: state.setLastFetchedAt,
-    pushActivity: state.pushActivity,
-    showToast: state.showToast,
-  }),
-};

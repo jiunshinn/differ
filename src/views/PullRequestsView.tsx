@@ -47,11 +47,13 @@ export default function PullRequestsView() {
   );
   const loading = authQuery.isLoading || prsQuery.isFetching;
   const openPrMutation = useMutation({
-    mutationFn: (pr: GithubPullRequestSummary) => {
-      if (!repo) throw new Error('Repository is not selected');
-      return api.ghPrCheckout(repo.id, pr.number);
-    },
-    onSuccess: (session, pr) => {
+    mutationFn: ({ repoId, pr }: { repoId: number; pr: GithubPullRequestSummary }) =>
+      api.ghPrCheckout(repoId, pr.number),
+    onSuccess: (session, { repoId, pr }) => {
+      // ghPrCheckout runs network fetches and can take seconds. If the user
+      // switched repositories meanwhile, don't apply this (now-stale) PR session
+      // against the new repo.
+      if (useAppStore.getState().repo?.id !== repoId) return;
       setSession(session);
       setPrNumber(pr.number);
       setView('pr-detail');
@@ -83,15 +85,15 @@ export default function PullRequestsView() {
   if (!repo) return null;
 
   const openPr = async (pr: GithubPullRequestSummary) => {
-    if (openPrMutation.isPending) return;
+    if (openPrMutation.isPending || !repo) return;
     try {
-      await openPrMutation.mutateAsync(pr);
+      await openPrMutation.mutateAsync({ repoId: repo.id, pr });
     } catch {
       // onError already surfaced the message.
     }
   };
 
-  const opening = openPrMutation.isPending ? openPrMutation.variables?.number ?? null : null;
+  const opening = openPrMutation.isPending ? openPrMutation.variables?.pr.number ?? null : null;
 
   return (
     <div className="h-full w-full min-h-0 bg-bg-panel">

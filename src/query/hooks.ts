@@ -8,7 +8,6 @@ import { api } from '../api';
 import { queryKeys, type DiffQueryOptions } from './keys';
 import type {
   BranchInfo,
-  ChangedFile,
   CommentLabel,
   CommentTargetKind,
   FileDiff,
@@ -16,9 +15,7 @@ import type {
   GithubIssueStateFilter,
   GithubPullRequestStateFilter,
   GithubSubmitReviewInput,
-  RepoStatus,
   ReviewComment,
-  ReviewSession,
   TreeEntry,
 } from '@shared/types';
 
@@ -64,11 +61,23 @@ export function fileStatesQueryOptions(sessionId: number) {
   };
 }
 
+// Full invalidation: working tree, branches/commits AND the GitHub scope.
+// Use only for operations that can affect remote/GitHub state (fetch/pull/push/sync, submitReview).
 export function invalidateRepoQueries(queryClient: QueryClient, repoId: number): Promise<void> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.repo.scope(repoId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.diff.repo(repoId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.github.repo(repoId) }),
+  ]).then(() => undefined);
+}
+
+// Narrow invalidation: only status + diffs. Use for stage/unstage/hunk mutations,
+// which touch the index/working tree but cannot change branches, commits, tree,
+// file content or any GitHub data.
+export function invalidateWorkingTreeQueries(queryClient: QueryClient, repoId: number): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.repo.status(repoId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.diff.repo(repoId) }),
   ]).then(() => undefined);
 }
 
@@ -145,6 +154,35 @@ export function useFileContentQuery(repoId: number | null, relPath: string | nul
   });
 }
 
+// Cheap content signature for a diff: path/flags plus per-hunk header and line
+// counts. Used as a custom structuralSharing comparator so that no-change polls
+// (stage/unstage invalidations, the 30s auto-fetch) keep the previous reference
+// in O(hunks) instead of deep-walking every DiffLine via replaceEqualDeep.
+function fileDiffSignature(diff: FileDiff | null): string {
+  if (!diff) return 'null';
+  let sig = `${diff.filePath}|${diff.oldPath ?? ''}|${diff.isBinary ? 1 : 0}${diff.isNew ? 1 : 0}${diff.isDeleted ? 1 : 0}${diff.isRenamed ? 1 : 0}|`;
+  for (const h of diff.hunks) {
+    sig += `${h.header}#${h.oldStart},${h.oldLines},${h.newStart},${h.newLines},${h.lines.length};`;
+  }
+  return sig;
+}
+
+function diffStructuralSharing<T extends FileDiff | null>(prev: T | undefined, next: T): T {
+  if (prev !== undefined && fileDiffSignature(prev) === fileDiffSignature(next)) return prev;
+  return next;
+}
+
+function allDiffStructuralSharing(prev: FileDiff[] | undefined, next: FileDiff[]): FileDiff[] {
+  if (
+    prev !== undefined &&
+    prev.length === next.length &&
+    prev.every((p, i) => fileDiffSignature(p) === fileDiffSignature(next[i]))
+  ) {
+    return prev;
+  }
+  return next;
+}
+
 export function useFileDiffQuery({
   repoId,
   filePath,
@@ -180,6 +218,8 @@ export function useFileDiffQuery({
       });
     },
     enabled: repoId != null && filePath != null,
+    structuralSharing: (prev, next) =>
+      diffStructuralSharing(prev as FileDiff | null | undefined, next as FileDiff | null),
   });
 }
 
@@ -196,6 +236,8 @@ export function useAllDiffQuery(repoId: number | null, opts: DiffQueryOptions, e
       });
     },
     enabled: enabled && repoId != null,
+    structuralSharing: (prev, next) =>
+      allDiffStructuralSharing(prev as FileDiff[] | undefined, next as FileDiff[]),
   });
 }
 
@@ -342,7 +384,7 @@ export function useStageFileMutation(repoId: number | null) {
       return api.stageFile(repoId, filePath);
     },
     onSuccess: () => {
-      if (repoId != null) return invalidateRepoQueries(queryClient, repoId);
+      if (repoId != null) return invalidateWorkingTreeQueries(queryClient, repoId);
     },
   });
 }
@@ -355,7 +397,7 @@ export function useUnstageFileMutation(repoId: number | null) {
       return api.unstageFile(repoId, filePath);
     },
     onSuccess: () => {
-      if (repoId != null) return invalidateRepoQueries(queryClient, repoId);
+      if (repoId != null) return invalidateWorkingTreeQueries(queryClient, repoId);
     },
   });
 }
@@ -363,12 +405,12 @@ export function useUnstageFileMutation(repoId: number | null) {
 export function useStageHunkMutation(repoId: number | null, filePath: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (hunkHeader: string) => {
+    mutationFn: ({ hunkHeader, opts }: { hunkHeader: string; opts?: { ignoreWhitespace?: boolean; staged?: boolean } }) => {
       if (repoId == null || filePath == null) throw new Error('File is not selected');
-      return api.stageHunk(repoId, filePath, hunkHeader);
+      return api.stageHunk(repoId, filePath, hunkHeader, opts);
     },
     onSuccess: () => {
-      if (repoId != null) return invalidateRepoQueries(queryClient, repoId);
+      if (repoId != null) return invalidateWorkingTreeQueries(queryClient, repoId);
     },
   });
 }
@@ -376,12 +418,12 @@ export function useStageHunkMutation(repoId: number | null, filePath: string | n
 export function useUnstageHunkMutation(repoId: number | null, filePath: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (hunkHeader: string) => {
+    mutationFn: ({ hunkHeader, opts }: { hunkHeader: string; opts?: { ignoreWhitespace?: boolean; staged?: boolean } }) => {
       if (repoId == null || filePath == null) throw new Error('File is not selected');
-      return api.unstageHunk(repoId, filePath, hunkHeader);
+      return api.unstageHunk(repoId, filePath, hunkHeader, opts);
     },
     onSuccess: () => {
-      if (repoId != null) return invalidateRepoQueries(queryClient, repoId);
+      if (repoId != null) return invalidateWorkingTreeQueries(queryClient, repoId);
     },
   });
 }
@@ -499,13 +541,4 @@ export function useSubmitReviewMutation(repoId: number | null) {
       if (repoId != null) return invalidateRepoQueries(queryClient, repoId);
     },
   });
-}
-
-export function readStatusFiles(status: RepoStatus | undefined | null): ChangedFile[] {
-  return status?.files ?? [];
-}
-
-export function readCurrentSession(queryClient: QueryClient, session: ReviewSession | null): ReviewSession | null {
-  if (!session) return null;
-  return queryClient.getQueryData<ReviewSession>(queryKeys.session.detail(session.id)) ?? session;
 }

@@ -30,6 +30,10 @@ export interface UpsertAccountInput {
   avatarUrl: string | null;
   scopes: string[];
   tokenEncrypted: string | null;
+  // Plaintext fallback used ONLY when OS-backed encryption is unavailable
+  // (see githubService.encryptToken). When set, the account is flagged
+  // tokenStoredPlaintext so the UI can warn the user the token is at rest
+  // unencrypted. Exactly one of tokenEncrypted / tokenPlain is non-null.
   tokenPlain: string | null;
 }
 
@@ -72,7 +76,21 @@ export function listRepoIdsForAccount(accountId: number): number[] {
   return rows.map((r) => r.id);
 }
 
+function assertAccountExists(accountId: number): void {
+  // repositories.github_account_id has no enforced FK on existing installs (the
+  // column predates any REFERENCES clause), and these ids arrive from the
+  // renderer over IPC. Validate on the write path so a stale/bogus id cannot
+  // create a binding to a nonexistent github_accounts row.
+  const row = getDb()
+    .prepare(`SELECT 1 AS ok FROM github_accounts WHERE id = ?`)
+    .get(accountId) as { ok: number } | undefined;
+  if (!row) {
+    throw new Error(`GitHub account ${accountId} does not exist.`);
+  }
+}
+
 export function rebindRepos(fromAccountId: number, toAccountId: number | null): number {
+  if (toAccountId != null) assertAccountExists(toAccountId);
   const result = getDb()
     .prepare(`UPDATE repositories SET github_account_id = ? WHERE github_account_id = ?`)
     .run(toAccountId, fromAccountId);
@@ -80,6 +98,7 @@ export function rebindRepos(fromAccountId: number, toAccountId: number | null): 
 }
 
 export function setRepoAccount(repoId: number, accountId: number | null): void {
+  if (accountId != null) assertAccountExists(accountId);
   getDb()
     .prepare(`UPDATE repositories SET github_account_id = ? WHERE id = ?`)
     .run(accountId, repoId);

@@ -15,6 +15,7 @@ export default function CommitBar() {
   );
 
   const commit = async () => {
+    if (busy) return;
     if (!state.repo) return;
     if (!message.trim()) {
       toast('error', 'Commit message is empty');
@@ -37,6 +38,7 @@ export default function CommitBar() {
   };
 
   const amend = async () => {
+    if (busy) return;
     if (!state.repo) return;
     try {
       await amendMutation.mutateAsync(message.trim() || null);

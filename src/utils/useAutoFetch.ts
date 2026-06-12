@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { useApp } from '../state/AppStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { api } from '../api';
+import { invalidateRepoQueries } from '../query/hooks';
+import { useAppStore } from '../state/store';
 
 // Background fetch policy:
 //   - Fire once shortly after a repo is opened.
@@ -11,13 +14,35 @@ const FOCUS_COOLDOWN_MS = 15_000;
 const INITIAL_DELAY_MS = 400;
 
 export function useAutoFetch(): void {
-  const { state, silentFetch } = useApp();
-  const repoId = state.repo?.id ?? null;
+  // Subscribe ONLY to the repo id so the root (where this hook lives) does not
+  // re-render on unrelated store changes (toasts, activity, selection, etc.).
+  const repoId = useAppStore((s) => s.repo?.id ?? null);
+  const queryClient = useQueryClient();
   const lastTriggeredAt = useRef(0);
   const inFlight = useRef(false);
 
   useEffect(() => {
     if (repoId === null) return;
+
+    // Reset the cooldown/in-flight state on every repo switch so the new repo's
+    // documented initial fetch always fires, even if the previous repo was
+    // background-fetched within the cooldown window.
+    lastTriggeredAt.current = 0;
+    inFlight.current = false;
+
+    // Silent background fetch scoped to THIS repo. Capturing repoId means a late
+    // resolution after a repo switch is discarded instead of stamping freshness
+    // / invalidating queries on the newly selected repo.
+    const silentFetch = async (): Promise<void> => {
+      try {
+        await api.fetch(repoId);
+        if (useAppStore.getState().repo?.id !== repoId) return;
+        useAppStore.getState().setLastFetchedAt(Date.now());
+        await invalidateRepoQueries(queryClient, repoId);
+      } catch {
+        // Background fetch failures should not interrupt the user.
+      }
+    };
 
     const trigger = (): void => {
       if (inFlight.current) return;
@@ -48,5 +73,5 @@ export function useAutoFetch(): void {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [repoId, silentFetch]);
+  }, [repoId, queryClient]);
 }

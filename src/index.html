@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Differ</title>
+    <script>
+      // Apply the saved theme before the bundle paints to avoid a light-theme
+      // flash. Mirrors src/utils/theme.ts (STORAGE_KEY 'differ.theme', `dark`
+      // class + colorScheme on <html>).
+      (function () {
+        try {
+          var mode = localStorage.getItem('differ.theme');
+          if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+          var isDark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', isDark);
+          document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

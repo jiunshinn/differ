@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { useApp } from '../state/AppStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useApp, useFileFilter } from '../state/AppStore';
+import { api } from '../api';
 import { cn } from '../utils/cn';
-import { useStageFileMutation, useUnstageFileMutation } from '../query/hooks';
+import { invalidateRepoQueries } from '../query/hooks';
 import type { ChangedFile, WorkingTreeGroup } from '@shared/types';
 
 const GROUP_TITLES: Record<WorkingTreeGroup, string> = {
@@ -15,7 +17,9 @@ const GROUP_ORDER: WorkingTreeGroup[] = ['conflicted', 'staged', 'unstaged', 'un
 
 export default function ChangedFilesPanel() {
   const { state, dispatch, loadDiff, refresh, toast, logActivity } = useApp();
-  const filter = state.fileFilter.trim().toLowerCase();
+  const [fileFilter, setFileFilter] = useFileFilter();
+  const queryClient = useQueryClient();
+  const filter = fileFilter.trim().toLowerCase();
   const files = useMemo(
     () => (filter ? state.files.filter((f) => f.path.toLowerCase().includes(filter)) : state.files),
     [state.files, filter],
@@ -26,8 +30,6 @@ export default function ChangedFilesPanel() {
   for (const f of files) byGroup.get(f.group)!.push(f);
 
   const repoId = state.repo?.id ?? null;
-  const stageFileMutation = useStageFileMutation(repoId);
-  const unstageFileMutation = useUnstageFileMutation(repoId);
 
   const onClickFile = async (f: ChangedFile) => {
     dispatch({ type: 'setSelectedFile', filePath: f.path });
@@ -35,46 +37,47 @@ export default function ChangedFilesPanel() {
     await loadDiff(f.path);
   };
 
-  const stageFile = async (f: ChangedFile) => {
+  // Run the staged change directly, then invalidate the repo queries once and
+  // refresh — avoids the per-file git status/diff refetch storm of looping a
+  // mutation whose onSuccess invalidates on every iteration.
+  const applyAndRefresh = async (work: () => Promise<void>) => {
     try {
-      await stageFileMutation.mutateAsync(f.path);
+      await work();
+      if (repoId != null) await invalidateRepoQueries(queryClient, repoId);
+      await refresh();
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  };
+
+  const stageFile = (f: ChangedFile) =>
+    applyAndRefresh(async () => {
+      if (repoId == null) return;
+      await api.stageFile(repoId, f.path);
       logActivity({ kind: 'file_staged', message: 'Staged', detail: f.path });
-      await refresh();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
-  const unstageFile = async (f: ChangedFile) => {
-    try {
-      await unstageFileMutation.mutateAsync(f.path);
+    });
+  const unstageFile = (f: ChangedFile) =>
+    applyAndRefresh(async () => {
+      if (repoId == null) return;
+      await api.unstageFile(repoId, f.path);
       logActivity({ kind: 'file_unstaged', message: 'Unstaged', detail: f.path });
-      await refresh();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
-  const stageAll = async (group: WorkingTreeGroup) => {
-    for (const f of byGroup.get(group) ?? []) {
-      try {
-        await stageFileMutation.mutateAsync(f.path);
-      } catch (e) {
-        toast('error', (e as Error).message);
+    });
+  const stageAll = (group: WorkingTreeGroup) =>
+    applyAndRefresh(async () => {
+      if (repoId == null) return;
+      for (const f of byGroup.get(group) ?? []) {
+        await api.stageFile(repoId, f.path);
       }
-    }
-    logActivity({ kind: 'file_staged', message: `Staged all ${GROUP_TITLES[group].toLowerCase()}` });
-    await refresh();
-  };
-  const unstageAll = async () => {
-    for (const f of byGroup.get('staged') ?? []) {
-      try {
-        await unstageFileMutation.mutateAsync(f.path);
-      } catch (e) {
-        toast('error', (e as Error).message);
+      logActivity({ kind: 'file_staged', message: `Staged all ${GROUP_TITLES[group].toLowerCase()}` });
+    });
+  const unstageAll = () =>
+    applyAndRefresh(async () => {
+      if (repoId == null) return;
+      for (const f of byGroup.get('staged') ?? []) {
+        await api.unstageFile(repoId, f.path);
       }
-    }
-    logActivity({ kind: 'file_unstaged', message: 'Unstaged all' });
-    await refresh();
-  };
+      logActivity({ kind: 'file_unstaged', message: 'Unstaged all' });
+    });
 
   const fileStateMap = new Map(state.fileStates.map((s) => [s.file_path, s.status] as const));
 
@@ -84,8 +87,8 @@ export default function ChangedFilesPanel() {
         className="input"
         aria-label="Filter files"
         placeholder="Filter files or comments"
-        value={state.fileFilter}
-        onChange={(e) => dispatch({ type: 'setFileFilter', value: e.target.value })}
+        value={fileFilter}
+        onChange={(e) => setFileFilter(e.target.value)}
       />
       <div className="mt-3.5 grid gap-3.5">
         {GROUP_ORDER.map((g) => {
@@ -116,13 +119,22 @@ export default function ChangedFilesPanel() {
                   return (
                     <div
                       key={`${g}::${f.path}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelected}
                       className={cn(
-                        'group grid grid-cols-[20px_minmax(0,1fr)_auto] gap-2 items-center px-2 py-1.5 rounded-lg text-sm cursor-pointer min-w-0',
+                        'group grid grid-cols-[20px_minmax(0,1fr)_auto] gap-2 items-center px-2 py-1.5 rounded-lg text-sm cursor-pointer min-w-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent',
                         isSelected
                           ? 'bg-bg-panel border border-border shadow-card'
                           : 'border border-transparent hover:bg-bg-subtle',
                       )}
                       onClick={() => void onClickFile(f)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          void onClickFile(f);
+                        }
+                      }}
                     >
                       <StatusBadge file={f} />
                       <span className="truncate" title={f.path}>

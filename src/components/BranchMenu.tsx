@@ -10,6 +10,7 @@ export default function BranchMenu() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!open || !state.repo) return;
@@ -27,25 +28,38 @@ export default function BranchMenu() {
     } catch (e) {
       toast('error', (e as Error).message);
     }
-    setOpen(false);
+    handleOpenChange(false);
   };
 
   const doCreate = async () => {
-    if (!newName.trim()) return;
+    if (pending) return;
+    const name = newName.trim();
+    if (!name) return;
+    setPending(true);
     try {
-      await api.createBranch(state.repo!.id, newName.trim(), true);
+      await api.createBranch(state.repo!.id, name, true);
       await refresh();
-      toast('success', `Created ${newName.trim()}`);
-      setNewName('');
-      setCreating(false);
-      setOpen(false);
+      toast('success', `Created ${name}`);
+      handleOpenChange(false);
     } catch (e) {
       toast('error', (e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // Reset the create form whenever the menu closes so a half-filled form does
+  // not survive to the next open.
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setCreating(false);
+      setNewName('');
     }
   };
 
   return (
-    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+    <DropdownMenu.Root open={open} onOpenChange={handleOpenChange}>
       <DropdownMenu.Trigger asChild>
         <button className="chip-selected">
           <span className="text-accent mr-1">⎇</span>
@@ -56,6 +70,12 @@ export default function BranchMenu() {
         <DropdownMenu.Content
           className="z-50 min-w-[280px] bg-bg-panel border border-border rounded-card shadow-raised p-1"
           sideOffset={6}
+          // While the create form is open, Escape should only close the form
+          // (handled on the input), not dismiss the whole menu via Radix's
+          // document-level escape listener.
+          onEscapeKeyDown={(e) => {
+            if (creating) e.preventDefault();
+          }}
         >
           {branches.map((b) => (
             <DropdownMenu.Item
@@ -97,12 +117,23 @@ export default function BranchMenu() {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 autoFocus
+                // Stop keydown from bubbling to Radix's Menu typeahead, which
+                // would otherwise focus a branch item whose name shares a prefix
+                // with what's being typed and steal focus from this input.
                 onKeyDown={(e) => {
+                  e.stopPropagation();
                   if (e.key === 'Enter') void doCreate();
-                  if (e.key === 'Escape') setCreating(false);
+                  if (e.key === 'Escape') {
+                    setCreating(false);
+                    setNewName('');
+                  }
                 }}
               />
-              <button className="btn-primary" onClick={() => void doCreate()}>
+              <button
+                className="btn-primary"
+                disabled={pending || !newName.trim()}
+                onClick={() => void doCreate()}
+              >
                 Create
               </button>
             </div>

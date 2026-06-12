@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { useApp } from '../state/AppStore';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useApp, useAppStore } from '../state/AppStore';
 import { cn } from '../utils/cn';
+import { formatDateTime } from '../utils/date';
 import CommentComposer from './CommentComposer';
 import {
+  useFileDiffQuery,
   useSetFileStateMutation,
   useStageHunkMutation,
   useUnstageHunkMutation,
@@ -24,9 +26,79 @@ export default function DiffViewer() {
   const selected = state.selectedFile;
   const repoId = state.repo?.id ?? null;
   const sessionId = state.session?.id ?? null;
+  const ignoreWhitespace = state.ignoreWhitespace;
   const stageHunkMutation = useStageHunkMutation(repoId, selected);
   const unstageHunkMutation = useUnstageHunkMutation(repoId, selected);
   const setFileStateMutation = useSetFileStateMutation(sessionId);
+  // Shares the same query key as the diff observer inside useApp, so this reads
+  // the same cache entry (no extra fetch) and surfaces its error state — which
+  // the diffsByFile map never exposes (it only carries data).
+  const diffQuery = useFileDiffQuery({
+    repoId,
+    filePath: selected,
+    staged: state.diffStaged,
+    ignoreWhitespace: state.ignoreWhitespace,
+    includeUntracked: !state.diffStaged,
+  });
+
+  // Stabilized so memoized hunk rows don't re-render when an unrelated store
+  // slice (file filter, toast, activity) changes. hunkHeader is passed as an
+  // argument rather than closed over, keeping these identities constant.
+  const stageHunk = useCallback(
+    async (hunkHeader: string) => {
+      try {
+        await stageHunkMutation.mutateAsync({ hunkHeader, opts: { ignoreWhitespace } });
+        logActivity({ kind: 'file_staged', message: 'Staged hunk', detail: `${selected} ${hunkHeader}` });
+        await refresh();
+      } catch (e) {
+        toast('error', (e as Error).message);
+      }
+    },
+    [stageHunkMutation, ignoreWhitespace, logActivity, selected, refresh, toast],
+  );
+  const unstageHunk = useCallback(
+    async (hunkHeader: string) => {
+      try {
+        await unstageHunkMutation.mutateAsync({ hunkHeader, opts: { ignoreWhitespace } });
+        logActivity({ kind: 'file_unstaged', message: 'Unstaged hunk', detail: `${selected} ${hunkHeader}` });
+        await refresh();
+      } catch (e) {
+        toast('error', (e as Error).message);
+      }
+    },
+    [unstageHunkMutation, ignoreWhitespace, logActivity, selected, refresh, toast],
+  );
+
+  const addLineComment = useCallback(
+    (hunkHeader: string, side: 'old' | 'new', lineNumber: number) =>
+      setComposer({ target: 'line', side, line: lineNumber, hunkHeader }),
+    [],
+  );
+  const addHunkComment = useCallback(
+    (hunkHeader: string) => setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader }),
+    [],
+  );
+
+  const toggleReviewed = useCallback(async () => {
+    if (!sessionId || !selected) return;
+    const current = state.fileStates.find((fs) => fs.file_path === selected);
+    const next = current?.status === 'reviewed' ? 'viewed' : 'reviewed';
+    try {
+      await setFileStateMutation.mutateAsync({ filePath: selected, status: next });
+      if (next === 'reviewed') {
+        logActivity({ kind: 'file_reviewed', message: 'Marked reviewed', detail: selected });
+      }
+    } catch (e) {
+      toast('error', (e as Error).message);
+    }
+  }, [sessionId, selected, state.fileStates, setFileStateMutation, logActivity, toast]);
+
+  // Memoized so the [comments] dependency of the per-hunk comment maps is
+  // referentially stable across unrelated re-renders.
+  const fileComments = useMemo(
+    () => state.comments.filter((c) => c.file_path === selected),
+    [state.comments, selected],
+  );
 
   if (!selected) {
     return (
@@ -37,6 +109,18 @@ export default function DiffViewer() {
   }
   const diffEntry = state.diffsByFile[selected];
   if (diffEntry === undefined) {
+    if (diffQuery.isError) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-text-muted text-sm px-6 text-center">
+          <p className="font-medium text-text-primary">Couldn’t load diff</p>
+          <p className="font-mono text-xs truncate max-w-full">{selected}</p>
+          <p className="text-xs max-w-[60ch] break-words">{(diffQuery.error as Error)?.message ?? 'Unknown error'}</p>
+          <button className="btn h-8 mt-1" onClick={() => void loadDiff(selected)}>
+            Retry
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
         Loading diff…
@@ -56,39 +140,9 @@ export default function DiffViewer() {
   }
   const diff = diffEntry;
 
-  const fileComments = state.comments.filter((c) => c.file_path === selected);
   const openComments = fileComments.filter((c) => c.status === 'open').length;
 
   const setMode = (m: Mode) => dispatch({ type: 'setDiffMode', mode: m });
-
-  const stageHunk = async (hunkHeader: string) => {
-    try {
-      await stageHunkMutation.mutateAsync(hunkHeader);
-      logActivity({ kind: 'file_staged', message: 'Staged hunk', detail: `${selected} ${hunkHeader}` });
-      await refresh();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
-  const unstageHunk = async (hunkHeader: string) => {
-    try {
-      await unstageHunkMutation.mutateAsync(hunkHeader);
-      logActivity({ kind: 'file_unstaged', message: 'Unstaged hunk', detail: `${selected} ${hunkHeader}` });
-      await refresh();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
-  };
-
-  const toggleReviewed = async () => {
-    if (!sessionId) return;
-    const current = state.fileStates.find((fs) => fs.file_path === selected);
-    const next = current?.status === 'reviewed' ? 'viewed' : 'reviewed';
-    await setFileStateMutation.mutateAsync({ filePath: selected, status: next });
-    if (next === 'reviewed') {
-      logActivity({ kind: 'file_reviewed', message: 'Marked reviewed', detail: selected });
-    }
-  };
 
   const isReviewed = state.fileStates.find((fs) => fs.file_path === selected)?.status === 'reviewed';
 
@@ -183,14 +237,11 @@ export default function DiffViewer() {
               mode={state.diffMode}
               comments={fileComments}
               staged={state.diffStaged}
-              onStage={() => void stageHunk(h.header)}
-              onUnstage={() => void unstageHunk(h.header)}
-              onAddLineComment={(side, lineNumber) =>
-                setComposer({ target: 'line', side, line: lineNumber, hunkHeader: h.header })
-              }
-              onAddHunkComment={() =>
-                setComposer({ target: 'hunk', side: 'none', line: null, hunkHeader: h.header })
-              }
+              sessionId={sessionId}
+              onStage={stageHunk}
+              onUnstage={unstageHunk}
+              onAddLineComment={addLineComment}
+              onAddHunkComment={addHunkComment}
             />
           ))
         )}
@@ -266,12 +317,13 @@ function ToggleGroup({
   );
 }
 
-function HunkBlock({
+const HunkBlock = React.memo(function HunkBlock({
   file,
   hunk,
   mode,
   comments,
   staged,
+  sessionId,
   onStage,
   onUnstage,
   onAddLineComment,
@@ -282,28 +334,42 @@ function HunkBlock({
   mode: Mode;
   comments: ReviewComment[];
   staged: boolean;
-  onStage: () => void;
-  onUnstage: () => void;
-  onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
-  onAddHunkComment: () => void;
+  sessionId: number | null;
+  onStage: (hunkHeader: string) => void;
+  onUnstage: (hunkHeader: string) => void;
+  onAddLineComment: (hunkHeader: string, side: 'old' | 'new', lineNumber: number) => void;
+  onAddHunkComment: (hunkHeader: string) => void;
 }) {
-  const hunkComments = comments.filter((c) => c.target_kind === 'hunk' && c.hunk_header === hunk.header);
+  const header = hunk.header;
+  const hunkComments = useMemo(
+    () => comments.filter((c) => c.target_kind === 'hunk' && c.hunk_header === header),
+    [comments, header],
+  );
+  // Bind the hunk header so child rows receive stable callbacks that don't
+  // depend on which hunk they belong to.
+  const stage = useCallback(() => onStage(header), [onStage, header]);
+  const unstage = useCallback(() => onUnstage(header), [onUnstage, header]);
+  const addHunkComment = useCallback(() => onAddHunkComment(header), [onAddHunkComment, header]);
+  const addLineComment = useCallback(
+    (side: 'old' | 'new', lineNumber: number) => onAddLineComment(header, side, lineNumber),
+    [onAddLineComment, header],
+  );
   return (
     <article className="panel-card">
       <div className="hunk-header">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono truncate">{hunk.header}</span>
+          <span className="font-mono truncate">{header}</span>
         </div>
         <div className="flex items-center gap-1">
-          <button className="btn-ghost text-xs h-7 px-2" onClick={onAddHunkComment}>
+          <button className="btn-ghost text-xs h-7 px-2" onClick={addHunkComment}>
             Comment hunk
           </button>
           {staged ? (
-            <button className="btn-ghost text-xs h-7 px-2" onClick={onUnstage}>
+            <button className="btn-ghost text-xs h-7 px-2" onClick={unstage}>
               Unstage
             </button>
           ) : (
-            <button className="btn-ghost text-xs h-7 px-2" onClick={onStage}>
+            <button className="btn-ghost text-xs h-7 px-2" onClick={stage}>
               Stage
             </button>
           )}
@@ -314,17 +380,24 @@ function HunkBlock({
           file={file}
           hunk={hunk}
           comments={comments}
-          onAddLineComment={onAddLineComment}
+          sessionId={sessionId}
+          onAddLineComment={addLineComment}
         />
       ) : (
-        <SplitHunk file={file} hunk={hunk} comments={comments} onAddLineComment={onAddLineComment} />
+        <SplitHunk
+          file={file}
+          hunk={hunk}
+          comments={comments}
+          sessionId={sessionId}
+          onAddLineComment={addLineComment}
+        />
       )}
       {hunkComments.map((c) => (
-        <InlineCommentRow key={c.id} comment={c} indent="hunk" />
+        <InlineCommentRow key={c.id} comment={c} indent="hunk" sessionId={sessionId} />
       ))}
     </article>
   );
-}
+});
 
 function lineKey(side: 'old' | 'new', lineNumber: number | null): string {
   return `${side}:${lineNumber ?? 'x'}`;
@@ -343,14 +416,15 @@ function commentsByLine(comments: ReviewComment[]): Map<string, ReviewComment[]>
 }
 
 function UnifiedHunk({
-  file,
   hunk,
   comments,
+  sessionId,
   onAddLineComment,
 }: {
   file: FileDiff;
   hunk: DiffHunk;
   comments: ReviewComment[];
+  sessionId: number | null;
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
 }) {
   const lineCommentMap = useMemo(() => commentsByLine(comments), [comments]);
@@ -358,20 +432,28 @@ function UnifiedHunk({
     <div className="overflow-x-auto">
       <div className="min-w-max">
         {hunk.lines.map((l, idx) => (
-          <UnifiedRow key={idx} line={l} lineCommentMap={lineCommentMap} onAddLineComment={onAddLineComment} />
+          <UnifiedRow
+            key={idx}
+            line={l}
+            lineCommentMap={lineCommentMap}
+            sessionId={sessionId}
+            onAddLineComment={onAddLineComment}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function UnifiedRow({
+const UnifiedRow = React.memo(function UnifiedRow({
   line,
   lineCommentMap,
+  sessionId,
   onAddLineComment,
 }: {
   line: DiffLine;
   lineCommentMap: Map<string, ReviewComment[]>;
+  sessionId: number | null;
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
 }) {
   const cls =
@@ -387,8 +469,14 @@ function UnifiedRow({
       ? 'old'
       : null;
   const lineNumber = side === 'old' ? line.oldLineNumber : line.newLineNumber;
-  const key = side && lineNumber != null ? lineKey(side, lineNumber) : null;
-  const inlineComments = key ? lineCommentMap.get(key) ?? [] : [];
+  // Context lines exist on both sides; a comment anchored to the old side (made
+  // in split mode) must still surface here, so look up both keys.
+  const inlineComments = useMemo(() => {
+    const matches: ReviewComment[] = [];
+    if (line.oldLineNumber != null) matches.push(...(lineCommentMap.get(lineKey('old', line.oldLineNumber)) ?? []));
+    if (line.newLineNumber != null) matches.push(...(lineCommentMap.get(lineKey('new', line.newLineNumber)) ?? []));
+    return matches;
+  }, [lineCommentMap, line.oldLineNumber, line.newLineNumber]);
   return (
     <>
       <div
@@ -413,40 +501,31 @@ function UnifiedRow({
         </div>
       </div>
       {inlineComments.map((c) => (
-        <InlineCommentRow key={c.id} comment={c} indent="line" />
+        <InlineCommentRow key={c.id} comment={c} indent="line" sessionId={sessionId} />
       ))}
     </>
   );
-}
+});
 
-function SplitHunk({
-  file,
-  hunk,
-  comments,
-  onAddLineComment,
-}: {
-  file: FileDiff;
-  hunk: DiffHunk;
-  comments: ReviewComment[];
-  onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
-}) {
-  type Row = { left: DiffLine | null; right: DiffLine | null };
+type Row = { left: DiffLine | null; right: DiffLine | null };
+
+function buildSplitRows(lines: DiffLine[]): Row[] {
   const rows: Row[] = [];
   let i = 0;
-  while (i < hunk.lines.length) {
-    const l = hunk.lines[i];
+  while (i < lines.length) {
+    const l = lines[i];
     if (l.kind === 'context') {
       rows.push({ left: l, right: l });
       i++;
     } else if (l.kind === 'del') {
       const dels: DiffLine[] = [];
-      while (i < hunk.lines.length && hunk.lines[i].kind === 'del') {
-        dels.push(hunk.lines[i]);
+      while (i < lines.length && lines[i].kind === 'del') {
+        dels.push(lines[i]);
         i++;
       }
       const adds: DiffLine[] = [];
-      while (i < hunk.lines.length && hunk.lines[i].kind === 'add') {
-        adds.push(hunk.lines[i]);
+      while (i < lines.length && lines[i].kind === 'add') {
+        adds.push(lines[i]);
         i++;
       }
       const max = Math.max(dels.length, adds.length);
@@ -461,6 +540,22 @@ function SplitHunk({
       i++;
     }
   }
+  return rows;
+}
+
+function SplitHunk({
+  hunk,
+  comments,
+  sessionId,
+  onAddLineComment,
+}: {
+  file: FileDiff;
+  hunk: DiffHunk;
+  comments: ReviewComment[];
+  sessionId: number | null;
+  onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
+}) {
+  const rows = useMemo(() => buildSplitRows(hunk.lines), [hunk.lines]);
   const lineCommentMap = useMemo(() => commentsByLine(comments), [comments]);
 
   return (
@@ -473,6 +568,7 @@ function SplitHunk({
               line={r.left}
               side="old"
               lineCommentMap={lineCommentMap}
+              sessionId={sessionId}
               onAddLineComment={onAddLineComment}
             />
           ))}
@@ -486,6 +582,7 @@ function SplitHunk({
               line={r.right}
               side="new"
               lineCommentMap={lineCommentMap}
+              sessionId={sessionId}
               onAddLineComment={onAddLineComment}
             />
           ))}
@@ -495,15 +592,17 @@ function SplitHunk({
   );
 }
 
-function SideCell({
+const SideCell = React.memo(function SideCell({
   line,
   side,
   lineCommentMap,
+  sessionId,
   onAddLineComment,
 }: {
   line: DiffLine | null;
   side: 'old' | 'new';
   lineCommentMap: Map<string, ReviewComment[]>;
+  sessionId: number | null;
   onAddLineComment: (side: 'old' | 'new', lineNumber: number) => void;
 }) {
   if (!line) {
@@ -547,15 +646,27 @@ function SideCell({
         </div>
       </div>
       {inlineComments.map((c) => (
-        <InlineCommentRow key={c.id} comment={c} indent="line" />
+        <InlineCommentRow key={c.id} comment={c} indent="line" sessionId={sessionId} />
       ))}
     </>
   );
-}
+});
 
-function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent: 'line' | 'hunk' }) {
-  const { state, toast, logActivity } = useApp();
-  const updateComment = useUpdateCommentMutation(state.session?.id ?? null);
+const InlineCommentRow = React.memo(function InlineCommentRow({
+  comment,
+  indent,
+  sessionId,
+}: {
+  comment: ReviewComment;
+  indent: 'line' | 'hunk';
+  sessionId: number | null;
+}) {
+  // Read only the narrow store actions this row needs instead of the heavy
+  // useApp() hook (which subscribes to the whole store and mounts query
+  // observers) once per comment row.
+  const showToast = useAppStore((s) => s.showToast);
+  const pushActivity = useAppStore((s) => s.pushActivity);
+  const updateComment = useUpdateCommentMutation(sessionId);
 
   const resolve = async () => {
     try {
@@ -563,13 +674,13 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
         id: comment.id,
         patch: { status: comment.status === 'open' ? 'resolved' : 'open' },
       });
-      logActivity({
+      pushActivity({
         kind: 'comment_resolved',
         message: comment.status === 'open' ? 'Resolved comment' : 'Reopened comment',
         detail: comment.file_path,
       });
     } catch (e) {
-      toast('error', (e as Error).message);
+      showToast('error', (e as Error).message);
     }
   };
 
@@ -598,12 +709,7 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
           </div>
           <span className="small-mono">
             {comment.status === 'resolved' ? 'resolved' : 'pending review'} ·{' '}
-            {new Date(comment.created_at).toLocaleString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            {formatDateTime(comment.created_at)}
           </span>
         </header>
         <div className="px-3 py-3">
@@ -617,4 +723,4 @@ function InlineCommentRow({ comment, indent }: { comment: ReviewComment; indent:
       </article>
     </div>
   );
-}
+});

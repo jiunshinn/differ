@@ -1,4 +1,14 @@
 // Shared types between main and renderer. These flow over IPC.
+//
+// NOTE: Repository / ReviewSession / ReviewComment / FileReviewState below are
+// raw SQLite row shapes — snake_case columns, and SQLite's integer-boolean
+// convention (e.g. `pinned` is 0 | 1, not a real boolean). The git/GitHub wire
+// types further down are camelCase with real booleans. Callers that mutate these
+// (e.g. optimistic cache updates) must respect the 0/1 convention. A future
+// cleanup should map rows to camelCase wire objects at the electron store
+// boundary (mirroring githubService's rowToAccount) so the DB schema stops
+// leaking into the IPC/UI contract; that work lives in electron/services and is
+// tracked separately.
 
 export interface Repository {
   id: number;
@@ -11,6 +21,7 @@ export interface Repository {
   github_account_id: number | null;
   created_at: string;
   last_opened_at: string;
+  /** SQLite boolean: 0 = unpinned, 1 = pinned. */
   pinned: number;
   sort_order: number;
 }
@@ -271,6 +282,9 @@ export interface GithubSubmitReviewInput {
   event: GithubReviewEvent;
   body: string;
   comments: GithubReviewCommentInput[];
+  // The head sha the diff was reviewed against, so review comments anchor to the
+  // reviewed commit even if the PR head advances before submission.
+  commitId?: string;
 }
 
 // Auth
@@ -281,6 +295,12 @@ export interface GithubAccount {
   avatarUrl: string | null;
   scopes: string[];
   addedAt: string;
+  // Set when the stored token failed to authenticate (revoked/expired): the
+  // account stays visible so the user can re-auth instead of it silently vanishing.
+  needsReauth?: boolean;
+  // Set when the token had to be persisted unencrypted (safeStorage unavailable),
+  // so the UI can warn the user.
+  tokenStoredPlaintext?: boolean;
 }
 
 export interface GithubAuthState {
@@ -294,11 +314,17 @@ export interface GithubOAuthConfig {
 }
 
 export interface GithubDeviceCode {
-  deviceCode: string;
+  // The secret device_code is intentionally NOT included — it stays in the main
+  // process; the renderer only needs the user-facing code and verification URL.
   userCode: string;
   verificationUri: string;
   expiresIn: number;
   interval: number;
+}
+
+export interface GithubListAllReposResult {
+  repos: GithubRepoSummary[];
+  errors: { accountId: number; login: string; message: string }[];
 }
 
 export type GithubOAuthPollStatus =
@@ -406,7 +432,6 @@ export const IpcChannels = {
   commentDelete: 'comment:delete',
 
   // File review state
-  fileStateGet: 'fileState:get',
   fileStateSet: 'fileState:set',
   fileStateList: 'fileState:list',
 

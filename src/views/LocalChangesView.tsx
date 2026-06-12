@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
-import { useApp } from '../state/AppStore';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useApp, useFileFilter } from '../state/AppStore';
 import ChangedFilesPanel from '../components/ChangedFilesPanel';
 import DiffViewer from '../components/DiffViewer';
 import ReviewPanel from '../components/ReviewPanel';
@@ -8,6 +8,7 @@ import ResizableLayout from '../components/ResizableLayout';
 
 export default function LocalChangesView() {
   const { state, dispatch, refresh, loadDiff } = useApp();
+  const [fileFilter] = useFileFilter();
   const repoId = state.repo?.id ?? null;
 
   useEffect(() => {
@@ -15,9 +16,15 @@ export default function LocalChangesView() {
   }, [repoId, refresh]);
 
   const filteredFiles = useMemo(() => {
-    const filter = state.fileFilter.trim().toLowerCase();
+    const filter = fileFilter.trim().toLowerCase();
     return filter ? state.files.filter((f) => f.path.toLowerCase().includes(filter)) : state.files;
-  }, [state.files, state.fileFilter]);
+  }, [state.files, fileFilter]);
+
+  // Dwell timer so j/k navigation doesn't mark every skimmed file 'viewed'. The
+  // diff itself loads via the always-mounted useFileDiffQuery as soon as
+  // selectedFile/diffStaged change; loadDiff (which writes the 'viewed' state) is
+  // deferred until the user actually settles on a file for ~500ms.
+  const dwellTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!state.diffFullscreen) return;
@@ -26,6 +33,9 @@ export default function LocalChangesView() {
       const tag = target?.tagName;
       const editable = target?.isContentEditable;
       if (editable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Don't fight an open dialog (e.g. the comment composer): Escape and j/k
+      // must belong to the dialog, not the fullscreen diff behind it.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -37,6 +47,9 @@ export default function LocalChangesView() {
       const isPrev = e.key === 'k' || e.key === 'ArrowUp';
       if (!isNext && !isPrev) return;
       e.preventDefault();
+      // Coalesce OS key auto-repeat: a held key fires a stream of repeat events;
+      // ignore them and advance one file per discrete press.
+      if (e.repeat) return;
       const currentIdx = filteredFiles.findIndex(
         (f) => f.path === state.selectedFile && (f.group === 'staged') === state.diffStaged,
       );
@@ -51,10 +64,21 @@ export default function LocalChangesView() {
       const next = filteredFiles[nextIdx];
       dispatch({ type: 'setSelectedFile', filePath: next.path });
       dispatch({ type: 'setDiffStaged', staged: next.group === 'staged' });
-      void loadDiff(next.path);
+      // Defer the 'mark viewed' write until the user dwells on this file.
+      if (dwellTimer.current !== null) window.clearTimeout(dwellTimer.current);
+      dwellTimer.current = window.setTimeout(() => {
+        dwellTimer.current = null;
+        void loadDiff(next.path);
+      }, 500);
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      if (dwellTimer.current !== null) {
+        window.clearTimeout(dwellTimer.current);
+        dwellTimer.current = null;
+      }
+    };
   }, [
     state.diffFullscreen,
     state.selectedFile,

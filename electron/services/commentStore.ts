@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, stmt } from './db';
 import type {
   CommentDiffSide,
   CommentLabel,
@@ -25,9 +25,11 @@ export interface UpdateCommentInput {
 }
 
 export function listComments(sessionId: number): ReviewComment[] {
-  return getDb()
-    .prepare(`SELECT * FROM review_comments WHERE review_session_id = ? ORDER BY created_at ASC`)
-    .all(sessionId) as ReviewComment[];
+  // Tie-break by id (monotonic rowid) so comments created within the same
+  // 1-second created_at tick keep a stable, deterministic order across refetches.
+  return stmt(
+    `SELECT * FROM review_comments WHERE review_session_id = ? ORDER BY created_at ASC, id ASC`,
+  ).all(sessionId) as ReviewComment[];
 }
 
 export function createComment(input: CreateCommentInput): ReviewComment {
@@ -76,12 +78,4 @@ export function updateComment(id: number, patch: UpdateCommentInput): ReviewComm
 
 export function deleteComment(id: number): void {
   getDb().prepare(`DELETE FROM review_comments WHERE id = ?`).run(id);
-}
-
-export function listCommentsByIds(ids: number[]): ReviewComment[] {
-  if (!ids.length) return [];
-  const placeholders = ids.map(() => '?').join(',');
-  return getDb()
-    .prepare(`SELECT * FROM review_comments WHERE id IN (${placeholders}) ORDER BY created_at ASC`)
-    .all(...ids) as ReviewComment[];
 }

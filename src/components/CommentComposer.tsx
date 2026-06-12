@@ -37,6 +37,7 @@ export default function CommentComposer({
   const busy = createComment.isPending;
 
   const save = async () => {
+    if (busy) return;
     if (!sessionId) return;
     if (!body.trim()) {
       toast('error', 'Comment cannot be empty');
