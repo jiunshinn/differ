@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import type {
   AgentHistoryDetail,
   AgentHistoryEntry,
@@ -68,9 +68,9 @@ async function listClaudeHistory(repoPath: string): Promise<AgentHistoryEntry[]>
 function listOpenCodeHistory(repoPath: string): AgentHistoryEntry[] {
   const dbPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
   if (!fs.existsSync(dbPath)) return [];
-  let db: Database.Database | null = null;
+  let db: DatabaseSync | null = null;
   try {
-    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    db = new DatabaseSync(dbPath, { readOnly: true });
     const rows = db
       .prepare(
         `SELECT id, title, directory, path, agent, time_updated
@@ -79,7 +79,7 @@ function listOpenCodeHistory(repoPath: string): AgentHistoryEntry[] {
           ORDER BY time_updated DESC
           LIMIT 120`,
       )
-      .all(repoPath, `${repoPath}${path.sep}%`, repoPath, `${repoPath}${path.sep}%`) as OpenCodeSessionRow[];
+      .all(repoPath, `${repoPath}${path.sep}%`, repoPath, `${repoPath}${path.sep}%`) as unknown as OpenCodeSessionRow[];
     return rows.map((row) => openCodeEntry(row));
   } catch {
     return [];
@@ -92,15 +92,15 @@ function readOpenCodeHistory(id: string): AgentHistoryDetail {
   const sessionId = decodeHistoryId(id);
   const dbPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
   if (!sessionId || !fs.existsSync(dbPath)) throw new Error('OpenCode history database not found');
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const row = db
       .prepare(`SELECT id, title, directory, path, agent, time_updated FROM session WHERE id = ?`)
-      .get(sessionId) as OpenCodeSessionRow | undefined;
+      .get(sessionId) as unknown as OpenCodeSessionRow | undefined;
     if (!row) throw new Error('OpenCode session not found');
     const messages = db
       .prepare(`SELECT data FROM message WHERE session_id = ? ORDER BY time_created, id`)
-      .all(sessionId) as { data: string }[];
+      .all(sessionId) as unknown as { data: string }[];
     const context = messages
       .map((m) => safeJson(m.data))
       .map((m, index) => formatRecordText(m, `message ${index + 1}`))

@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, type Param } from './db';
 import type {
   CommentDiffSide,
   CommentLabel,
@@ -54,7 +54,7 @@ export function createComment(input: CreateCommentInput): ReviewComment {
 export function updateComment(id: number, patch: UpdateCommentInput): ReviewComment | null {
   const db = getDb();
   const sets: string[] = [];
-  const args: unknown[] = [];
+  const args: Param[] = [];
   if (patch.body !== undefined) {
     sets.push('body = ?');
     args.push(patch.body);

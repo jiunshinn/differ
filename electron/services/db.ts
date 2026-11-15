@@ -1,35 +1,108 @@
 import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import Database from 'better-sqlite3';
+import { DatabaseSync, type SQLInputValue, type StatementResultingChanges, type StatementSync } from 'node:sqlite';
 
-let db: Database.Database | null = null;
+/** better-sqlite3 bound `undefined` as NULL; node:sqlite throws, so we normalise it. */
+export type Param = SQLInputValue | undefined;
 
-export function initDatabase(): Database.Database {
+/**
+ * The slice of node:sqlite the stores use. Rows come back as `unknown` so call
+ * sites cast to their row type (`.get(id) as Repository`), as they did with better-sqlite3.
+ */
+export interface Statement {
+  run(...params: Param[]): StatementResultingChanges;
+  get(...params: Param[]): unknown;
+  all(...params: Param[]): unknown[];
+}
+export interface Db {
+  prepare(sql: string): Statement;
+  exec(sql: string): void;
+  readonly isTransaction: boolean;
+}
+
+const bind = (params: Param[]): SQLInputValue[] => params.map((p) => (p === undefined ? null : p));
+
+function wrapStatement(s: StatementSync): Statement {
+  return {
+    run: (...p) => s.run(...bind(p)),
+    get: (...p) => s.get(...bind(p)),
+    all: (...p) => s.all(...bind(p)),
+  };
+}
+
+function wrapDb(raw: DatabaseSync): Db {
+  return {
+    prepare: (sql) => wrapStatement(raw.prepare(sql)),
+    exec: (sql) => raw.exec(sql),
+    get isTransaction() {
+      return raw.isTransaction;
+    },
+  };
+}
+
+// Node's built-in SQLite (bundled with Electron's Node). No native add-on to compile.
+let raw: DatabaseSync | null = null;
+let db: Db | null = null;
+const statements = new Map<string, Statement>();
+
+export function initDatabase(): Db {
   if (db) return db;
   const userDataDir = app.getPath('userData');
   fs.mkdirSync(userDataDir, { recursive: true });
   const dbPath = path.join(userDataDir, 'differ.sqlite3');
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  raw = new DatabaseSync(dbPath);
+  raw.exec('PRAGMA journal_mode = WAL');
+  raw.exec('PRAGMA foreign_keys = ON');
+  db = wrapDb(raw);
   applyMigrations(db);
   return db;
 }
 
-export function getDb(): Database.Database {
+export function getDb(): Db {
   if (!db) throw new Error('Database not initialized');
   return db;
 }
 
-export function closeDatabase(): void {
-  if (db) {
-    db.close();
-    db = null;
+/** Prepared statement, cached by SQL text. */
+export function stmt(sql: string): Statement {
+  let s = statements.get(sql);
+  if (!s) {
+    s = getDb().prepare(sql);
+    statements.set(sql, s);
   }
+  return s;
 }
 
-function applyMigrations(d: Database.Database): void {
+/**
+ * Wraps fn in BEGIN/COMMIT and rolls back if it throws. Same contract as
+ * better-sqlite3's db.transaction(): returns a function you call to run it.
+ * Nested calls run inside the outer transaction.
+ */
+export function transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  return (...args: A) => {
+    const d = getDb();
+    if (d.isTransaction) return fn(...args);
+    d.exec('BEGIN');
+    try {
+      const result = fn(...args);
+      d.exec('COMMIT');
+      return result;
+    } catch (err) {
+      d.exec('ROLLBACK');
+      throw err;
+    }
+  };
+}
+
+export function closeDatabase(): void {
+  statements.clear();
+  raw?.close();
+  raw = null;
+  db = null;
+}
+
+function applyMigrations(d: Db): void {
   d.exec(`
     CREATE TABLE IF NOT EXISTS repositories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +192,7 @@ function applyMigrations(d: Database.Database): void {
   }
 }
 
-function ensureColumn(d: Database.Database, table: string, column: string, decl: string): void {
+function ensureColumn(d: Db, table: string, column: string, decl: string): void {
   const cols = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === column)) {
     d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);

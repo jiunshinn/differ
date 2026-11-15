@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, transaction } from './db';
 
 export interface GithubAccountRow {
   id: number;
@@ -58,11 +58,10 @@ export function upsertAccount(input: UpsertAccountInput): void {
 
 export function deleteAccount(id: number): void {
   const db = getDb();
-  const tx = db.transaction(() => {
+  transaction(() => {
     db.prepare(`UPDATE repositories SET github_account_id = NULL WHERE github_account_id = ?`).run(id);
     db.prepare(`DELETE FROM github_accounts WHERE id = ?`).run(id);
-  });
-  tx();
+  })();
 }
 
 export function listRepoIdsForAccount(accountId: number): number[] {

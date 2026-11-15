@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { getDb } from './db';
+import { getDb, transaction } from './db';
 import type { Repository } from '../../shared/types';
 
 export function upsertRepository(
@@ -99,7 +99,7 @@ export function setRepositoryPinned(id: number, pinned: boolean): Repository | n
 export function reorderRepositories(orderedIds: number[]): void {
   const db = getDb();
   const update = db.prepare(`UPDATE repositories SET sort_order = ? WHERE id = ?`);
-  const tx = db.transaction((ids: number[]) => {
+  const tx = transaction((ids: number[]) => {
     ids.forEach((id, i) => update.run(i + 1, id));
   });
   tx(orderedIds);

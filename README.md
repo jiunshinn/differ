@@ -25,7 +25,7 @@ Differ is a focused desktop surface for reviewing local changes and GitHub PRs, 
 - React + Tailwind + Radix primitives (renderer)
 - Zustand for client-side UI state
 - TanStack Query for async IPC/GitHub data, mutations, and cache invalidation
-- SQLite via `better-sqlite3` (local storage)
+- SQLite via Node's built-in `node:sqlite` (local storage; no native add-on to compile)
 - Native `git` CLI through a typed IPC bridge (the renderer never spawns commands directly)
 - GitHub REST API via `@octokit/rest`
 
