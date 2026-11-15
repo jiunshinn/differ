@@ -1098,7 +1098,7 @@ function CodexComposer({
             </select>
           </div>
           <button
-            className="h-10 w-10 rounded-full bg-accent text-white grid place-items-center disabled:opacity-40 hover:bg-accent-hover transition-colors"
+            className="h-10 w-10 rounded-full bg-accent text-on-accent grid place-items-center disabled:opacity-40 hover:bg-accent-hover transition-colors"
             disabled={busy || !prompt.trim()}
             onClick={onSend}
             title="Send"

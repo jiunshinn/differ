@@ -197,13 +197,13 @@ export default function ProjectSidebar() {
             className={cn(
               'w-9 h-9 rounded-lg grid place-items-center text-xs font-semibold tracking-wide border transition-colors relative',
               active
-                ? 'bg-accent text-white border-accent'
+                ? 'bg-accent text-on-accent border-accent'
                 : 'bg-bg-panel text-text-secondary border-border hover:border-text-primary hover:text-text-primary',
             )}
           >
             {initials(r.name)}
             {!!r.pinned && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-accent border border-bg grid place-items-center text-[8px] text-white leading-none">
+              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-accent border border-bg grid place-items-center text-[8px] text-on-accent leading-none">
                 ★
               </span>
             )}
@@ -245,7 +245,7 @@ export default function ProjectSidebar() {
               className={cn(
                 'w-6 h-6 rounded-md grid place-items-center text-[10px] font-semibold border shrink-0',
                 active
-                  ? 'bg-accent text-white border-accent'
+                  ? 'bg-accent text-on-accent border-accent'
                   : 'bg-bg-panel text-text-muted border-border',
               )}
             >

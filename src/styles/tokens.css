@@ -1,0 +1,127 @@
+/*
+ * differ design tokens: the "Dusk" palette.
+ *
+ * Cool, blue-tinted neutrals with a soft graphite accent. Colour is reserved
+ * for meaning: warn = needs you, success = added/passed, danger = removed/failed,
+ * info = subagents and secondary activity.
+ *
+ * Colours are space-separated RGB triplets so Tailwind can apply opacity:
+ *   bg-accent/15, border-warn/40 …
+ * Dark is the primary theme; light mirrors every token.
+ */
+
+:root {
+  /* ── Surfaces (back → front) ─────────────────────────────── */
+  --color-bg: 247 248 250;          /* app background */
+  --color-bg-panel: 255 255 255;    /* sidebar, cards */
+  --color-bg-raised: 250 250 252;   /* popovers, menus, inputs on panels */
+  --color-bg-subtle: 242 243 246;   /* chips, code, inactive controls */
+  --color-bg-muted: 238 239 242;
+  --color-bg-hover: 235 236 240;
+
+  /* ── Borders ─────────────────────────────────────────────── */
+  --color-border: 226 228 234;
+  --color-border-subtle: 236 237 241;
+  --color-border-strong: 210 213 221;
+
+  /* ── Text ────────────────────────────────────────────────── */
+  --color-text-primary: 21 23 30;
+  --color-text-secondary: 75 80 94;
+  --color-text-muted: 120 126 140;
+  --color-text-faint: 160 165 177;
+
+  /* ── Accent: graphite ────────────────────────────────────── */
+  --color-accent: 52 56 68;
+  --color-accent-hover: 30 33 42;
+  --color-on-accent: 255 255 255;
+
+  /* ── Meaning ─────────────────────────────────────────────── */
+  --color-success: 22 140 90;
+  --color-warn: 178 112 20;
+  --color-danger: 200 55 55;
+  --color-info: 30 120 190;
+
+  /* ── Elevation ───────────────────────────────────────────── */
+  --shadow-card: rgba(21, 23, 30, 0.04);
+  --shadow-raised: rgba(21, 23, 30, 0.08);
+  --shadow-popover: 0 12px 32px rgba(21, 23, 30, 0.12), 0 2px 6px rgba(21, 23, 30, 0.06);
+  --shadow-float: 0 8px 24px rgba(21, 23, 30, 0.10);
+  --surface-glass: rgba(255, 255, 255, 0.82);
+
+  /* ── Diff ────────────────────────────────────────────────── */
+  --scrollbar-thumb: rgba(21, 23, 30, 0.14);
+  --scrollbar-thumb-hover: rgba(21, 23, 30, 0.26);
+  --diff-row-border: rgba(226, 228, 234, 0.6);
+  --diff-gutter-border: rgba(226, 228, 234, 0.8);
+  --diff-add-bg: rgba(22, 140, 90, 0.08);
+  --diff-del-bg: rgba(200, 55, 55, 0.07);
+  --diff-selected-bg: rgba(30, 120, 190, 0.08);
+  --diff-comment-bg: rgba(178, 112, 20, 0.06);
+  --diff-empty-stripe: rgba(21, 23, 30, 0.025);
+  --diff-gutter-context: 160 165 177;
+  --diff-hunk-bg: 247 248 250;
+
+  /* ── Type ────────────────────────────────────────────────── */
+  --font-sans: 'Geist Variable', 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Pretendard Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── Motion ──────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+}
+
+.dark {
+  --color-bg: 11 12 16;             /* #0b0c10 */
+  --color-bg-panel: 16 17 22;       /* #101116 */
+  --color-bg-raised: 22 23 30;      /* #16171e */
+  --color-bg-subtle: 22 23 30;
+  --color-bg-muted: 19 20 26;
+  --color-bg-hover: 29 31 39;       /* #1d1f27 */
+
+  --color-border: 32 34 43;         /* #20222b */
+  --color-border-subtle: 26 28 35;
+  --color-border-strong: 43 46 57;  /* #2b2e39 */
+
+  --color-text-primary: 233 235 241;
+  --color-text-secondary: 154 160 174;
+  --color-text-muted: 98 104 118;
+  --color-text-faint: 74 79 92;
+
+  --color-accent: 178 184 196;      /* #b2b8c4 */
+  --color-accent-hover: 196 201 211;
+  --color-on-accent: 11 12 16;
+
+  --color-success: 82 192 141;
+  --color-warn: 224 168 90;
+  --color-danger: 232 112 111;
+  --color-info: 99 180 230;
+
+  --shadow-card: rgba(0, 0, 0, 0.35);
+  --shadow-raised: rgba(0, 0, 0, 0.45);
+  --shadow-popover: 0 20px 50px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --surface-glass: rgba(16, 17, 22, 0.84);
+
+  --scrollbar-thumb: rgba(233, 235, 241, 0.12);
+  --scrollbar-thumb-hover: rgba(233, 235, 241, 0.24);
+  --diff-row-border: rgba(32, 34, 43, 0.7);
+  --diff-gutter-border: rgba(32, 34, 43, 0.9);
+  --diff-add-bg: rgba(82, 192, 141, 0.10);
+  --diff-del-bg: rgba(232, 112, 111, 0.10);
+  --diff-selected-bg: rgba(99, 180, 230, 0.10);
+  --diff-comment-bg: rgba(224, 168, 90, 0.07);
+  --diff-empty-stripe: rgba(233, 235, 241, 0.03);
+  --diff-gutter-context: 98 104 118;
+  --diff-hunk-bg: 16 17 22;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}

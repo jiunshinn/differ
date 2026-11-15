@@ -1,92 +1,9 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Surfaces */
-  --color-bg: 250 250 250;
-  --color-bg-panel: 255 255 255;
-  --color-bg-subtle: 244 244 245;
-  --color-bg-muted: 239 239 239;
-  --color-bg-hover: 240 240 242;
-
-  /* Borders */
-  --color-border: 229 229 229;
-  --color-border-subtle: 237 237 237;
-  --color-border-strong: 212 212 212;
-
-  /* Text */
-  --color-text-primary: 17 17 17;
-  --color-text-secondary: 63 63 70;
-  --color-text-muted: 107 107 107;
-
-  /* Brand + semantic */
-  --color-accent: 47 111 235;
-  --color-accent-hover: 31 90 209;
-  --color-success: 23 163 74;
-  --color-warn: 234 179 8;
-  --color-danger: 220 38 38;
-
-  /* Shadows */
-  --shadow-raised: rgba(17, 17, 17, 0.08);
-  --shadow-card: rgba(17, 17, 17, 0.04);
-
-  /* Diff helpers (used by hand-rolled CSS below) */
-  --scrollbar-thumb: rgba(17, 17, 17, 0.15);
-  --scrollbar-thumb-hover: rgba(17, 17, 17, 0.28);
-  --diff-row-border: rgba(229, 229, 229, 0.65);
-  --diff-gutter-border: rgba(229, 229, 229, 0.75);
-  --diff-add-bg: rgba(23, 163, 74, 0.09);
-  --diff-del-bg: rgba(220, 38, 38, 0.08);
-  --diff-selected-bg: rgba(47, 111, 235, 0.08);
-  --diff-comment-bg: rgba(47, 111, 235, 0.05);
-  --diff-empty-stripe: rgba(17, 17, 17, 0.025);
-  --diff-gutter-context: 156 163 175;
-  --diff-hunk-bg: 250 250 250;
-}
-
-.dark {
-  /* Surfaces */
-  --color-bg: 10 10 10;
-  --color-bg-panel: 20 20 20;
-  --color-bg-subtle: 32 32 32;
-  --color-bg-muted: 26 26 26;
-  --color-bg-hover: 38 38 38;
-
-  /* Borders */
-  --color-border: 45 45 45;
-  --color-border-subtle: 32 32 32;
-  --color-border-strong: 64 64 64;
-
-  /* Text */
-  --color-text-primary: 237 237 237;
-  --color-text-secondary: 200 200 200;
-  --color-text-muted: 150 150 150;
-
-  /* Brand + semantic */
-  --color-accent: 96 165 250;
-  --color-accent-hover: 130 185 255;
-  --color-success: 74 222 128;
-  --color-warn: 250 204 21;
-  --color-danger: 248 113 113;
-
-  /* Shadows */
-  --shadow-raised: rgba(0, 0, 0, 0.7);
-  --shadow-card: rgba(0, 0, 0, 0.5);
-
-  /* Diff helpers */
-  --scrollbar-thumb: rgba(237, 237, 237, 0.16);
-  --scrollbar-thumb-hover: rgba(237, 237, 237, 0.30);
-  --diff-row-border: rgba(45, 45, 45, 0.7);
-  --diff-gutter-border: rgba(45, 45, 45, 0.9);
-  --diff-add-bg: rgba(74, 222, 128, 0.10);
-  --diff-del-bg: rgba(248, 113, 113, 0.10);
-  --diff-selected-bg: rgba(96, 165, 250, 0.14);
-  --diff-comment-bg: rgba(96, 165, 250, 0.08);
-  --diff-empty-stripe: rgba(237, 237, 237, 0.035);
-  --diff-gutter-context: 115 115 115;
-  --diff-hunk-bg: 20 20 20;
-}
 
 html, body, #root {
   height: 100%;
@@ -94,7 +11,9 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
   background: rgb(var(--color-bg));
   color: rgb(var(--color-text-primary));
   -webkit-font-smoothing: antialiased;
@@ -133,11 +52,11 @@ input, textarea, [contenteditable='true'] {
     @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-sm
       bg-transparent border border-border text-text-primary
       hover:bg-bg-subtle transition-colors;
-    font-weight: 510;
-    letter-spacing: 0.01em;
+    font-weight: 500;
+    letter-spacing: 0;
   }
   .btn-primary {
-    @apply btn bg-accent border-accent text-white hover:bg-accent-hover;
+    @apply btn bg-accent border-accent text-on-accent hover:bg-accent-hover hover:border-accent-hover;
   }
   .btn-ghost {
     @apply btn border-transparent hover:bg-bg-subtle;
@@ -180,7 +99,7 @@ input, textarea, [contenteditable='true'] {
 .diff-line {
   display: grid;
   grid-template-columns: 52px 52px 1fr;
-  font-family: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   min-height: 22px;
@@ -267,7 +186,7 @@ input, textarea, [contenteditable='true'] {
 .hunk-header {
   background: rgb(var(--diff-hunk-bg));
   color: rgb(var(--color-text-muted));
-  font-family: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 8px 12px;
   border-bottom: 1px solid rgb(var(--color-border));
