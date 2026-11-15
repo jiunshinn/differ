@@ -9,21 +9,25 @@ import { queryClient } from './query/client';
 import { initTheme } from './utils/theme';
 import { TooltipProvider } from './ui';
 
-const App = React.lazy(() => import('./App'));
+const AppShell = React.lazy(() => import('./shell/AppShell'));
+const GitReviewApp = React.lazy(() => import('./App'));
 const DesignSystemPage = React.lazy(() => import('./design/DesignSystemPage'));
 
 initTheme();
 console.log('[differ] renderer booted');
 
-// The design system gallery lives at #/design-system (dev and packaged builds alike).
-const isDesignSystem = window.location.hash.startsWith('#/design-system');
+// Direct routes (dev and packaged builds alike):
+//   #/design-system  design system gallery
+//   #/git-review     the original Git/GitHub review app, until it's rebuilt on the new design
+const hash = window.location.hash;
+const route = hash.startsWith('#/design-system') ? 'design' : hash.startsWith('#/git-review') ? 'git' : 'app';
 
 const root = createRoot(document.getElementById('root')!);
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Suspense fallback={null}>{isDesignSystem ? <DesignSystemPage /> : <App />}</Suspense>
+        <Suspense fallback={null}>{route === 'design' ? <DesignSystemPage /> : route === 'git' ? <GitReviewApp /> : <AppShell />}</Suspense>
       </TooltipProvider>
     </QueryClientProvider>
   </React.StrictMode>,

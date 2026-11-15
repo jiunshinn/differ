@@ -10,11 +10,14 @@ export function upsertRepository(
     remote_url: string | null;
     github_owner: string | null;
     github_repo: string | null;
+    /** Machine the working copy lives on ('local' or an ssh environment id). */
+    environment_id?: string;
     // When provided, write the binding. When undefined, preserve any existing binding on update.
     github_account_id?: number | null;
   },
 ): Repository {
   const db = getDb();
+  const environmentId = fields.environment_id ?? 'local';
   const existing = db.prepare(`SELECT * FROM repositories WHERE path = ?`).get(repoPath) as
     | Repository
     | undefined;
@@ -23,7 +26,7 @@ export function upsertRepository(
       db.prepare(
         `UPDATE repositories
            SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?,
-               github_account_id = ?, last_opened_at = datetime('now')
+               environment_id = ?, github_account_id = ?, last_opened_at = datetime('now')
            WHERE id = ?`,
       ).run(
         fields.name,
@@ -31,13 +34,15 @@ export function upsertRepository(
         fields.remote_url,
         fields.github_owner,
         fields.github_repo,
+        environmentId,
         fields.github_account_id,
         existing.id,
       );
     } else {
       db.prepare(
         `UPDATE repositories
-           SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?, last_opened_at = datetime('now')
+           SET name = ?, default_branch = ?, remote_url = ?, github_owner = ?, github_repo = ?,
+               environment_id = ?, last_opened_at = datetime('now')
            WHERE id = ?`,
       ).run(
         fields.name,
@@ -45,6 +50,7 @@ export function upsertRepository(
         fields.remote_url,
         fields.github_owner,
         fields.github_repo,
+        environmentId,
         existing.id,
       );
     }
@@ -55,11 +61,12 @@ export function upsertRepository(
   };
   const result = db
     .prepare(
-      `INSERT INTO repositories (path, name, default_branch, remote_url, github_owner, github_repo, github_account_id, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO repositories (path, environment_id, name, default_branch, remote_url, github_owner, github_repo, github_account_id, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       repoPath,
+      environmentId,
       fields.name,
       fields.default_branch,
       fields.remote_url,
@@ -83,6 +90,11 @@ export function listRecentRepositories(limit = 50): Repository[] {
 
 export function getRepositoryById(id: number): Repository | null {
   return (getDb().prepare(`SELECT * FROM repositories WHERE id = ?`).get(id) as Repository) ?? null;
+}
+
+/** The repository row for a working copy path, if we've seen it before. */
+export function getRepositoryByPath(repoPath: string): Repository | null {
+  return (getDb().prepare(`SELECT * FROM repositories WHERE path = ?`).get(repoPath) as Repository) ?? null;
 }
 
 export function removeRepository(id: number): void {

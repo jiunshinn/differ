@@ -76,6 +76,7 @@ module.exports = {
       },
       keyframes: {
         pulse: { '50%': { opacity: '0.35' } },
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
         'pop-in': {
           from: { opacity: '0', transform: 'scale(0.97)' },
           to: { opacity: '1', transform: 'scale(1)' },
@@ -83,6 +84,7 @@ module.exports = {
       },
       animation: {
         'status-pulse': 'pulse 1.6s ease-in-out infinite',
+        'fade-in': 'fade-in var(--duration-fast) var(--ease-out)',
         'pop-in': 'pop-in var(--duration-fast) var(--ease-out)',
       },
     },

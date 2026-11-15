@@ -29,10 +29,15 @@ import {
   stageHunk,
   unstageFile,
   unstageHunk,
+  withSshTarget,
 } from './services/git';
+import { getEnvironment } from './environments';
+import { listDirectory } from './services/fsBrowse';
+import { sshTarget } from './services/ssh';
 import {
   basenameOfPath,
   getRepositoryById,
+  getRepositoryByPath,
   listRecentRepositories,
   removeRepository,
   reorderRepositories,
@@ -104,6 +109,16 @@ export function registerIpcHandlers(deps: Deps): void {
   });
 
   handle(IpcChannels.repoOpen, async (repoPath: string) => openRepoAtPath(repoPath));
+
+  // Open a folder that lives on a specific machine (this Mac or an ssh environment).
+  handle(IpcChannels.repoOpenInEnvironment, async (environmentId: string, repoPath: string) =>
+    openRepoAtPath(repoPath, null, environmentId),
+  );
+
+  // Folder navigation for the "Add project" dialog.
+  handle(IpcChannels.fsListDir, async (environmentId: string | null, dirPath: string | null) =>
+    listDirectory(environmentId, dirPath),
+  );
 
   handle(IpcChannels.repoPickDirectory, async (title?: string) => {
     const win = getWindow();
@@ -454,23 +469,53 @@ export function registerIpcHandlers(deps: Deps): void {
   });
 }
 
-async function openRepoAtPath(repoPath: string, accountId: number | null = null): Promise<unknown> {
-  if (!(await isGitRepo(repoPath))) {
-    throw new Error('Selected folder is not a Git repository');
+async function openRepoAtPath(
+  repoPath: string,
+  accountId: number | null = null,
+  environmentId?: string,
+): Promise<unknown> {
+  const trimmed = repoPath.trim();
+  // Callers either name the machine (the add-project dialog) or just the path
+  // (recents, native picker). In the latter case keep whatever the row has.
+  const named = environmentId && environmentId !== 'local' ? environmentId : null;
+  const effectiveEnvId = named ?? getRepositoryByPath(trimmed)?.environment_id ?? 'local';
+  const env = effectiveEnvId === 'local' ? undefined : getEnvironment(effectiveEnvId);
+  if (effectiveEnvId !== 'local' && !env) {
+    throw new Error(`The environment this project lives on no longer exists (${effectiveEnvId})`);
   }
-  const top = await getRepoTopLevel(repoPath);
-  const remoteUrl = await getRemoteUrl(top);
-  const defaultBranch = await getDefaultBranch(top);
-  const gh = parseGithubFromRemote(remoteUrl);
-  return upsertRepository(top, {
-    name: basenameOfPath(top),
-    default_branch: defaultBranch,
-    remote_url: remoteUrl,
-    github_owner: gh?.owner ?? null,
-    github_repo: gh?.repo ?? null,
-    // Only thread the account binding when explicitly provided (e.g. from clone flow).
-    // Plain folder-open keeps any existing binding intact.
-    ...(accountId != null ? { github_account_id: accountId } : {}),
+  if (env && !(trimmed.startsWith('/') || trimmed.startsWith('~'))) {
+    throw new Error(`Enter an absolute path on ${env.name} (for example ~/src/app)`);
+  }
+  // Git for this folder has to run on the machine that owns it. Register the
+  // target for the duration of the open; afterwards the repository row resolves it.
+  return withSshTarget(trimmed, env ? sshTarget(env) : null, async () => {
+    if (!(await isGitRepo(trimmed))) {
+      throw new Error('Selected folder is not a Git repository');
+    }
+    const top = await getRepoTopLevel(trimmed);
+    // The repositories table keys on path, so the same absolute path on two
+    // machines can't be stored twice. Say so instead of silently re-binding.
+    const clash = getRepositoryByPath(top);
+    if (clash && clash.environment_id !== effectiveEnvId) {
+      const otherEnv = clash.environment_id === 'local' ? 'this Mac' : getEnvironment(clash.environment_id)?.name ?? clash.environment_id;
+      throw new Error(
+        `“${basenameOfPath(top)}” is already added from ${otherEnv}. Remove it from the project list first.`,
+      );
+    }
+    const remoteUrl = await getRemoteUrl(top);
+    const defaultBranch = await getDefaultBranch(top);
+    const gh = parseGithubFromRemote(remoteUrl);
+    return upsertRepository(top, {
+      name: basenameOfPath(top),
+      default_branch: defaultBranch,
+      remote_url: remoteUrl,
+      github_owner: gh?.owner ?? null,
+      github_repo: gh?.repo ?? null,
+      environment_id: effectiveEnvId,
+      // Only thread the account binding when explicitly provided (e.g. from clone flow).
+      // Plain folder-open keeps any existing binding intact.
+      ...(accountId != null ? { github_account_id: accountId } : {}),
+    });
   });
 }
 

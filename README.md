@@ -19,6 +19,19 @@ Differ is a focused desktop surface for reviewing local changes and GitHub PRs, 
 - Fetch, pull, push, and monitor ahead/behind status from the top bar.
 - Switch between light, dark, and system themes.
 
+## Agent threads
+
+differ runs coding agents as **ACP** (Agent Client Protocol) providers, so any agent that speaks ACP works the same way: Claude Code ships built in, and more can be added under **Settings → Providers**.
+
+Agents already installed on the machine are detected automatically — Codex (`codex-acp`), Cursor (`cursor-agent`), OpenCode, Devin, Gemini CLI, GitHub Copilot and goose — so there is nothing to configure. Detection also checks `~/.local/bin`, Homebrew, Volta and asdf paths, because a Finder-launched app doesn't inherit your shell's `PATH`.
+
+The model list comes from the agent itself, not a hardcoded table: ACP only exposes config options once a session exists, so the server opens a throwaway session, reads the model selector, and caches it. The composer then offers the real models before the first message, and the same picker stays available inside a thread. **Settings → Providers → Models** lists each provider's models inline with a switch per model; hidden ones are kept out of the composer and saved to `models.json`.
+
+- Agent threads live in a separate headless server (`server/`) that Electron starts on its bundled Node. The same server can later run on a remote host over SSH and serve a mobile client.
+- Each thread gets its own agent process and works inside one folder; the agent can only read and write inside that folder.
+- Permission requests, file edits, plans and command output stream into the thread as they happen and are stored, so threads survive restarts.
+- The renderer talks to the server over a local WebSocket with a random token. The contract is `shared/protocol.ts`; `reduceThread()` there turns a thread's event log into what you see, and the mobile app will reuse it.
+
 ## Stack
 
 - Electron (desktop shell)
@@ -43,6 +56,7 @@ Useful checks:
 ```sh
 npm run lint
 npm run typecheck
+npm run test:server   # end-to-end tests for the agent server (mock ACP agent)
 npm run build
 ```
 

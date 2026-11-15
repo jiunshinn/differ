@@ -107,6 +107,7 @@ function applyMigrations(d: Db): void {
     CREATE TABLE IF NOT EXISTS repositories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT NOT NULL UNIQUE,
+      environment_id TEXT NOT NULL DEFAULT 'local',
       name TEXT NOT NULL,
       default_branch TEXT,
       remote_url TEXT,
@@ -179,6 +180,8 @@ function applyMigrations(d: Db): void {
   ensureColumn(d, 'repositories', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'repositories', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'repositories', 'github_account_id', 'INTEGER');
+  // Repositories can live on an ssh environment; older rows are local.
+  ensureColumn(d, 'repositories', 'environment_id', "TEXT NOT NULL DEFAULT 'local'");
   // Seed sort_order for existing rows so they keep a stable order matching last_opened_at.
   const seeded = d
     .prepare(`SELECT COUNT(*) AS n FROM repositories WHERE sort_order != 0`)

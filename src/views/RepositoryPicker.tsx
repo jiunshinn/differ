@@ -5,6 +5,7 @@ import type { Repository } from '@shared/types';
 import GithubAuthDialog from '../components/GithubAuthDialog';
 import CloneFromUrlDialog from '../components/CloneFromUrlDialog';
 import RepoBrowserDialog from '../components/RepoBrowserDialog';
+import AddProjectDialog from '../components/AddProjectDialog';
 
 export default function RepositoryPicker() {
   const { dispatch, toast, refresh } = useApp();
@@ -13,6 +14,7 @@ export default function RepositoryPicker() {
   const [showAuth, setShowAuth] = useState(false);
   const [showClone, setShowClone] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
 
   const load = async () => {
     const list = await api.recentRepos();
@@ -39,18 +41,16 @@ export default function RepositoryPicker() {
     }
   };
 
-  const pick = async () => {
-    try {
-      const r = await api.pickRepo();
-      if (!r) return;
-      dispatch({ type: 'setRepo', repo: r });
-      dispatch({ type: 'setSession', session: null });
-      dispatch({ type: 'view', view: 'local' });
-      await refresh();
-      await load();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
+  const addProject = async (folder: string, environmentId: string) => {
+    const repo = await api.openRepoInEnvironment(environmentId, folder);
+    dispatch({ type: 'setRepo', repo });
+    dispatch({ type: 'setSession', session: null });
+    dispatch({ type: 'setStatus', status: null });
+    dispatch({ type: 'setSelectedFile', filePath: null });
+    dispatch({ type: 'setPrNumber', n: null });
+    dispatch({ type: 'view', view: 'local' });
+    await refresh();
+    await load();
   };
 
   const onBrowseClick = () => {
@@ -76,8 +76,8 @@ export default function RepositoryPicker() {
           </p>
         </div>
         <div className="flex gap-2 mb-8 flex-wrap">
-          <button className="btn-primary h-10 px-4" onClick={() => void pick()}>
-            Open local repository…
+          <button className="btn-primary h-10 px-4" onClick={() => setShowAdd(true)}>
+            Add project…
           </button>
           <button className="btn h-10 px-4" onClick={() => setShowClone(true)}>
             Clone from URL…
@@ -125,8 +125,24 @@ export default function RepositoryPicker() {
           }}
         />
       )}
-      {showClone && <CloneFromUrlDialog onClose={() => setShowClone(false)} />}
+      {showClone && (
+        <CloneFromUrlDialog
+          onClose={() => {
+            setShowClone(false);
+            void load();
+          }}
+        />
+      )}
       {showBrowser && <RepoBrowserDialog onClose={() => setShowBrowser(false)} />}
+      {showAdd && (
+        <AddProjectDialog
+          onClose={() => {
+            setShowAdd(false);
+            void load();
+          }}
+          onPicked={addProject}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useApp } from '../state/AppStore';
 import { useRecentReposQuery } from '../query/hooks';
 import { queryKeys } from '../query/keys';
 import { cn } from '../utils/cn';
+import AddProjectDialog from './AddProjectDialog';
 import type { Repository } from '@shared/types';
 
 const STORAGE_KEY = 'differ:projectSidebar:collapsed';
@@ -35,6 +36,7 @@ export default function ProjectSidebar() {
   });
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: number; pos: DropPos } | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const dragIdRef = useRef<number | null>(null);
   const recentError = recentQuery.error instanceof Error ? recentQuery.error.message : null;
 
@@ -74,21 +76,18 @@ export default function ProjectSidebar() {
     }
   };
 
-  const pick = async () => {
-    try {
-      const r = await api.pickRepo();
-      if (!r) return;
-      dispatch({ type: 'setRepo', repo: r });
-      dispatch({ type: 'setSession', session: null });
-      dispatch({ type: 'setStatus', status: null });
-      dispatch({ type: 'setSelectedFile', filePath: null });
-      dispatch({ type: 'setPrNumber', n: null });
-      dispatch({ type: 'view', view: 'local' });
-      await refresh();
-      await recentQuery.refetch();
-    } catch (e) {
-      toast('error', (e as Error).message);
-    }
+  const openAddProject = () => setAddOpen(true);
+
+  const addProject = async (folder: string, environmentId: string) => {
+    const repo = await api.openRepoInEnvironment(environmentId, folder);
+    dispatch({ type: 'setRepo', repo });
+    dispatch({ type: 'setSession', session: null });
+    dispatch({ type: 'setStatus', status: null });
+    dispatch({ type: 'setSelectedFile', filePath: null });
+    dispatch({ type: 'setPrNumber', n: null });
+    dispatch({ type: 'view', view: 'local' });
+    await refresh();
+    await recentQuery.refetch();
   };
 
   const togglePin = async (repo: Repository) => {
@@ -336,19 +335,19 @@ export default function ProjectSidebar() {
           <li className={collapsed ? 'mt-1' : 'w-full mt-1'}>
             {collapsed ? (
               <button
-                onClick={() => void pick()}
-                title="Open repository…"
+                onClick={openAddProject}
+                title="Add a project…"
                 className="w-9 h-9 rounded-lg grid place-items-center border border-dashed border-border text-text-muted hover:text-text-primary hover:border-text-primary transition-colors"
               >
                 +
               </button>
             ) : (
               <button
-                onClick={() => void pick()}
+                onClick={openAddProject}
                 className="w-full h-9 px-2 rounded-lg flex items-center gap-2 text-sm border border-dashed border-border text-text-muted hover:text-text-primary hover:border-text-primary transition-colors"
               >
                 <span className="w-6 h-6 grid place-items-center shrink-0">+</span>
-                <span className="truncate">Open repository…</span>
+                <span className="truncate">Add project…</span>
               </button>
             )}
           </li>
@@ -365,6 +364,8 @@ export default function ProjectSidebar() {
           {collapsed ? '›' : '‹'}
         </button>
       </div>
+
+      {addOpen && <AddProjectDialog onClose={() => setAddOpen(false)} onPicked={addProject} />}
     </aside>
   );
 }

@@ -3,6 +3,8 @@
 export interface Repository {
   id: number;
   path: string;
+  /** Which machine the working copy lives on: 'local' or an ssh environment id. */
+  environment_id: string;
   name: string;
   default_branch: string | null;
   remote_url: string | null;
@@ -358,9 +360,84 @@ export interface CloneRequest {
 
 // IPC channels (used as a const map so renderer + main stay in sync)
 
+/** Address of the local differ server (see shared/protocol.ts; duplicated here for the CommonJS Electron build). */
+export interface ServerEndpoint {
+  url: string;
+  token: string;
+}
+
+/** A machine differ can work on. */
+export interface Environment {
+  id: string;
+  name: string;
+  kind: 'local' | 'ssh';
+  /** user@host for ssh environments. */
+  host: string;
+  port: number;
+  /** Where the differ server lives on the remote machine. */
+  remoteDir: string;
+  /** Custom start command; empty means "node src/main.js --stdio" in remoteDir. */
+  command: string;
+  createdAt: string;
+}
+
+/** Editable fields of an ssh environment. */
+export interface EnvironmentDraft {
+  id?: string;
+  name: string;
+  host: string;
+  port: number;
+  remoteDir: string;
+  command: string;
+}
+
+export interface EnvironmentList {
+  activeId: string;
+  environments: Environment[];
+  /** Environment ids whose differ server is running right now. */
+  connectedIds?: string[];
+}
+
+export interface EnvironmentCheck {
+  ok: boolean;
+  detail: string;
+}
+
+/** One folder in the in-app folder browser. */
+export interface FsBrowseEntry {
+  name: string;
+  /** Absolute path on the browsed machine. */
+  path: string;
+  /** True when the folder itself is a Git working tree. */
+  isRepo: boolean;
+}
+
+export interface FsBrowseListing {
+  /** Absolute path on the browsed machine. */
+  path: string;
+  /** null at the filesystem root. */
+  parent: string | null;
+  /** The browsed machine's home folder. */
+  home: string;
+  /** True when this folder itself is a Git working tree. */
+  isRepo: boolean;
+  entries: FsBrowseEntry[];
+}
+
 export const IpcChannels = {
+  // Local differ server
+  serverEndpoint: 'server:endpoint',
+  // Environments
+  envList: 'env:list',
+  envSave: 'env:save',
+  envDelete: 'env:delete',
+  envActivate: 'env:activate',
+  envCheck: 'env:check',
+  envBootstrap: 'env:bootstrap',
+  envDisconnect: 'env:disconnect',
   // Repo lifecycle
   repoOpen: 'repo:open',
+  repoOpenInEnvironment: 'repo:openInEnvironment',
   repoPick: 'repo:pick',
   repoRecent: 'repo:recent',
   repoRemove: 'repo:remove',
@@ -389,6 +466,7 @@ export const IpcChannels = {
   repoReadFile: 'repo:readFile',
   repoClone: 'repo:clone',
   repoPickDirectory: 'repo:pickDirectory',
+  fsListDir: 'fs:listDir',
 
   // Diff
   diffFile: 'diff:file',

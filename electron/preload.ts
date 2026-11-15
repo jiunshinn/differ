@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IpcChannels } from '../shared/types';
+import {
+  IpcChannels,
+  type EnvironmentCheck,
+  type EnvironmentDraft,
+  type EnvironmentList,
+  type ServerEndpoint,
+} from '../shared/types';
 
 const invoke = <T = unknown>(channel: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(channel, ...args) as Promise<T>;
@@ -8,6 +14,10 @@ const api = {
   // Repo
   pickRepo: () => invoke(IpcChannels.repoPick),
   openRepo: (path: string) => invoke(IpcChannels.repoOpen, path),
+  openRepoInEnvironment: (environmentId: string, path: string) =>
+    invoke(IpcChannels.repoOpenInEnvironment, environmentId, path),
+  listDir: (environmentId: string | null, path: string | null) =>
+    invoke(IpcChannels.fsListDir, environmentId, path),
   pickDirectory: (title?: string) => invoke(IpcChannels.repoPickDirectory, title),
   cloneRepo: (req: unknown) => invoke(IpcChannels.repoClone, req),
   recentRepos: () => invoke(IpcChannels.repoRecent),
@@ -95,6 +105,18 @@ const api = {
   ghIssueDetail: (repoId: number, issueNumber: number) => invoke(IpcChannels.ghIssueDetail, repoId, issueNumber),
   ghIssueOpenInBrowser: (repoId: number, issueNumber: number) =>
     invoke(IpcChannels.ghIssueOpenInBrowser, repoId, issueNumber),
+
+  // Local differ server
+  serverEndpoint: (envId?: string) => invoke<ServerEndpoint>(IpcChannels.serverEndpoint, envId),
+
+  // Environments (this machine, or another over SSH)
+  envList: () => invoke<EnvironmentList>(IpcChannels.envList),
+  envSave: (draft: EnvironmentDraft) => invoke<unknown>(IpcChannels.envSave, draft),
+  envDelete: (id: string) => invoke<EnvironmentList>(IpcChannels.envDelete, id),
+  envActivate: (id: string) => invoke<ServerEndpoint>(IpcChannels.envActivate, id),
+  envDisconnect: (id: string) => invoke<string[]>(IpcChannels.envDisconnect, id),
+  envCheck: (id: string) => invoke<EnvironmentCheck>(IpcChannels.envCheck, id),
+  envBootstrap: (id: string) => invoke<EnvironmentCheck>(IpcChannels.envBootstrap, id),
 
   // System
   copyToClipboard: (text: string) => invoke(IpcChannels.clipboardWrite, text),

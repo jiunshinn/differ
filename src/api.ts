@@ -10,6 +10,7 @@ import type {
   FileDiff,
   FileReviewState,
   FileReviewStatus,
+  FsBrowseListing,
   GithubAccount,
   GithubAuthState,
   GithubCheckRun,
@@ -28,7 +29,12 @@ import type {
   RepoStatus,
   Repository,
   ReviewComment,
+  Environment,
+  EnvironmentCheck,
+  EnvironmentDraft,
+  EnvironmentList,
   ReviewSession,
+  ServerEndpoint,
   TreeEntry,
 } from '@shared/types';
 
@@ -36,6 +42,8 @@ import type {
 export interface DifferApi {
   pickRepo: () => Promise<Repository | null>;
   openRepo: (path: string) => Promise<Repository>;
+  openRepoInEnvironment: (environmentId: string, path: string) => Promise<Repository>;
+  listDir: (environmentId: string | null, path: string | null) => Promise<FsBrowseListing>;
   pickDirectory: (title?: string) => Promise<string | null>;
   cloneRepo: (req: CloneRequest) => Promise<Repository>;
   recentRepos: () => Promise<Repository[]>;
@@ -128,6 +136,16 @@ export interface DifferApi {
   ghIssueDetail: (repoId: number, issueNumber: number) => Promise<GithubIssueDetail>;
   ghIssueOpenInBrowser: (repoId: number, issueNumber: number) => Promise<boolean>;
 
+  serverEndpoint: (envId?: string) => Promise<ServerEndpoint>;
+
+  envList: () => Promise<EnvironmentList>;
+  envSave: (draft: EnvironmentDraft) => Promise<Environment>;
+  envDelete: (id: string) => Promise<EnvironmentList>;
+  envActivate: (id: string) => Promise<ServerEndpoint>;
+  envDisconnect: (id: string) => Promise<string[]>;
+  envCheck: (id: string) => Promise<EnvironmentCheck>;
+  envBootstrap: (id: string) => Promise<EnvironmentCheck>;
+
   copyToClipboard: (text: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
 }
@@ -138,6 +156,67 @@ declare global {
   }
 }
 
-export const api: DifferApi = (window as unknown as { differ: DifferApi }).differ;
+/**
+ * Outside Electron (a plain browser during development), only the agent server is reachable.
+ * Open the renderer with ?server=ws://127.0.0.1:PORT&token=TOKEN to connect to a running server.
+ */
+function browserApi(): DifferApi {
+  const params = new URLSearchParams(window.location.search);
+  const local: Partial<DifferApi> = {
+    serverEndpoint: async () => {
+      const url = params.get('server');
+      const token = params.get('token');
+      if (!url || !token) throw new Error('Add ?server=…&token=… to the URL to connect to a differ server');
+      return { url, token };
+    },
+    recentRepos: async () => [],
+    envList: async () =>
+      ({
+        activeId: 'local',
+        connectedIds: ['local'],
+        environments: [
+          {
+            id: 'local',
+            name: 'This machine',
+            kind: 'local',
+            host: '',
+            port: 22,
+            remoteDir: '',
+            command: '',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }) as EnvironmentList,
+    envSave: async () => {
+      throw new Error('Environments can only be added in the desktop app');
+    },
+    envDelete: async () => {
+      throw new Error('Environments can only be changed in the desktop app');
+    },
+    envActivate: async () => {
+      throw new Error('Environments can only be switched in the desktop app');
+    },
+    envDisconnect: async () => [],
+    envCheck: async () => ({ ok: false, detail: 'Only available in the desktop app' }),
+    envBootstrap: async () => ({ ok: false, detail: 'Only available in the desktop app' }),
+    pickDirectory: async () => window.prompt('Folder path on the server host') || null,
+    openRepoInEnvironment: async () => {
+      throw new Error('Opening a project from another machine is only available in the desktop app');
+    },
+    listDir: async () => {
+      throw new Error('Folder browsing is only available in the desktop app');
+    },
+    openExternal: async (url: string) => {
+      window.open(url, '_blank', 'noopener');
+      return true;
+    },
+  };
+  return new Proxy(local as DifferApi, {
+    get: (target, key: string) =>
+      key in target ? target[key as keyof DifferApi] : () => Promise.reject(new Error(`${key} is only available in the desktop app`)),
+  });
+}
+
+export const api: DifferApi = (window as unknown as { differ?: DifferApi }).differ ?? browserApi();
 
 export type { ChangedFile };

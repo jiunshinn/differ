@@ -17,5 +17,6 @@
       "@shared/*": ["shared/*"]
     }
   },
-  "include": ["electron/**/*.ts", "shared/**/*.ts"]
+  "include": ["electron/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["shared/protocol.ts"]
 }

@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { FileContent, TreeEntry } from '../../shared/types';
+import { sshFor } from './git';
+import { runRemoteNode } from './ssh';
 
 const SKIP_DIRS = new Set([
   '.git',
@@ -37,6 +39,8 @@ function safeJoin(repoRoot: string, rel: string): string {
 }
 
 export async function listTree(repoRoot: string, relDir: string = ''): Promise<TreeEntry[]> {
+  const remote = sshFor(repoRoot);
+  if (remote) return listTreeRemote(repoRoot, relDir);
   const absDir = relDir ? safeJoin(repoRoot, relDir) : path.resolve(repoRoot);
   const dirents = await fs.readdir(absDir, { withFileTypes: true });
   const entries: TreeEntry[] = [];
@@ -67,7 +71,77 @@ function looksBinary(buf: Buffer): boolean {
   return false;
 }
 
+const REMOTE_LIST_SCRIPT = `
+const fs = require('fs');
+const path = require('path');
+const root = process.argv[1];
+const rel = process.argv[2] || '';
+const dir = rel ? path.join(root, rel) : root;
+const out = [];
+for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  if (entry.isDirectory()) out.push({ name: entry.name, kind: 'dir' });
+  else if (entry.isFile()) out.push({ name: entry.name, kind: 'file' });
+}
+process.stdout.write(JSON.stringify(out));
+`;
+
+const REMOTE_READ_SCRIPT = `
+const fs = require('fs');
+const path = require('path');
+const root = process.argv[1];
+const rel = process.argv[2];
+const max = Number(process.argv[3]);
+const abs = path.join(root, rel);
+const stat = fs.statSync(abs);
+const size = stat.size;
+const read = Math.min(size, max);
+const fd = fs.openSync(abs, 'r');
+const buf = Buffer.alloc(read);
+fs.readSync(fd, buf, 0, read, 0);
+fs.closeSync(fd);
+process.stdout.write(JSON.stringify({ size, base64: buf.toString('base64') }));
+`;
+
+/** Directory listing for a working copy on a remote environment. */
+async function listTreeRemote(repoRoot: string, relDir: string): Promise<TreeEntry[]> {
+  const remote = sshFor(repoRoot);
+  if (!remote) return [];
+  const raw = await runRemoteNode<{ name: string; kind: 'dir' | 'file' }[]>(remote, REMOTE_LIST_SCRIPT, [
+    repoRoot,
+    relDir,
+  ]);
+  const prefix = relDir ? `${relDir.replace(/\/+$/, '')}/` : '';
+  const entries: TreeEntry[] = raw
+    .filter((e) => !SKIP_DIRS.has(e.name))
+    .map((e) => ({ name: e.name, path: `${prefix}${e.name}`, kind: e.kind }));
+  entries.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return entries;
+}
+
+async function readFileRemote(repoRoot: string, relPath: string): Promise<FileContent> {
+  const remote = sshFor(repoRoot);
+  if (!remote) throw new Error(`Not a remote repository: ${repoRoot}`);
+  const result = await runRemoteNode<{ size: number; base64: string }>(remote, REMOTE_READ_SCRIPT, [
+    repoRoot,
+    relPath,
+    String(MAX_FILE_BYTES),
+  ]);
+  const buf = Buffer.from(result.base64, 'base64');
+  const binary = looksBinary(buf);
+  return {
+    path: relPath,
+    text: binary ? null : buf.toString('utf8'),
+    isBinary: binary,
+    size: result.size,
+    truncated: result.size > MAX_FILE_BYTES,
+  };
+}
+
 export async function readFile(repoRoot: string, relPath: string): Promise<FileContent> {
+  if (sshFor(repoRoot)) return readFileRemote(repoRoot, relPath);
   const abs = safeJoin(repoRoot, relPath);
   const stat = await fs.stat(abs);
   if (!stat.isFile()) throw new Error(`Not a file: ${relPath}`);

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { runSsh, shq, sshBinary, sshArgs, type SshTarget } from './ssh';
 import type {
   BranchInfo,
   ChangedFile,
@@ -20,6 +21,48 @@ export class GitError extends Error {
   }
 }
 
+/**
+ * Where a working copy lives. Repositories on an SSH environment have their git
+ * commands (and the file reads we do alongside them) run on that machine.
+ * When no target is registered the code path is exactly the local one.
+ */
+type SshResolver = (cwd: string) => SshTarget | null;
+
+let sshResolver: SshResolver | null = null;
+const sshOverrides = new Map<string, SshTarget>();
+
+export function setSshResolver(fn: SshResolver | null): void {
+  sshResolver = fn;
+}
+
+/** Resolve the remote machine for a working directory, if it has one. */
+export function sshFor(cwd: string): SshTarget | null {
+  // Overrides cover a folder that isn't in the database yet, including any
+  // subfolder git reports as the real work-tree root.
+  for (const [key, target] of sshOverrides) {
+    if (cwd === key || cwd.startsWith(key.endsWith('/') ? key : `${key}/`)) return target;
+  }
+  return sshResolver ? sshResolver(cwd) : null;
+}
+
+/**
+ * Run fn with `cwd` temporarily treated as remote. Used while opening a project
+ * that isn't in the database yet, so its first git calls already go over ssh.
+ */
+export async function withSshTarget<T>(
+  cwd: string,
+  target: SshTarget | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!target) return fn();
+  sshOverrides.set(cwd, target);
+  try {
+    return await fn();
+  } finally {
+    sshOverrides.delete(cwd);
+  }
+}
+
 interface RunOptions {
   cwd: string;
   input?: string | Buffer;
@@ -35,6 +78,8 @@ export interface RunResult {
 }
 
 export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
+  const target = sshFor(opts.cwd);
+  if (target) return runGitRemote(target, args, opts);
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: opts.cwd,
@@ -69,6 +114,67 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
   });
 }
 
+/** Run git on the environment that owns the working copy, over ssh. */
+function runGitRemote(target: SshTarget, args: string[], opts: RunOptions): Promise<RunResult> {
+  const env = {
+    GIT_TERMINAL_PROMPT: '0',
+    LC_ALL: 'C',
+    LANG: 'C',
+    ...(opts.env ?? {}),
+  } as Record<string, string>;
+  const assignments = Object.entries(env).map(([key, value]) => `${key}=${shq(value ?? '')}`);
+  const command = `cd ${shq(opts.cwd)} && env ${assignments.join(' ')} git ${args.map(shq).join(' ')}`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(sshBinary(), sshArgs(target.env, command), { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString('utf8');
+    });
+    child.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString('utf8');
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      // ssh exits 255 for connection problems; report that as a git failure too.
+      if (code === 0 || (opts.allowNonZeroCodes && code !== null && opts.allowNonZeroCodes.includes(code))) {
+        resolve({ stdout, stderr, code });
+      } else {
+        reject(new GitError(stderr.trim() || stdout.trim(), code, args.join(' ')));
+      }
+    });
+    if (opts.input) {
+      child.stdin.write(opts.input);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
+/** Whether a path exists next to a local working copy. */
+function pathExists(cwd: string, target: string): boolean {
+  // `git rev-parse --git-path` reports paths relative to the working tree root.
+  const abs = path.isAbsolute(target) ? target : path.join(cwd, target);
+  return fs.existsSync(abs);
+}
+
+/** Read a file next to a working copy — locally, or on its environment. */
+async function readFileBuffer(cwd: string, absPath: string): Promise<Buffer | null> {
+  const remote = sshFor(cwd);
+  if (!remote) {
+    if (!fs.existsSync(absPath)) return null;
+    try {
+      return fs.readFileSync(absPath);
+    } catch {
+      return null;
+    }
+  }
+  const r = await runSsh(remote, `base64 < ${shq(absPath)}`);
+  if (r.code !== 0) return null;
+  return Buffer.from(r.stdout.replace(/\s+/g, ''), 'base64');
+}
+
 export async function clone(
   remoteUrl: string,
   destDir: string,
@@ -96,7 +202,7 @@ export async function clone(
 }
 
 export async function isGitRepo(dir: string): Promise<boolean> {
-  if (!fs.existsSync(dir)) return false;
+  if (!sshFor(dir) && !fs.existsSync(dir)) return false;
   try {
     const r = await runGit(['rev-parse', '--is-inside-work-tree'], { cwd: dir });
     return r.stdout.trim() === 'true';
@@ -148,14 +254,28 @@ async function gitPath(cwd: string, name: string): Promise<string | null> {
 }
 
 export async function getOperationState(cwd: string): Promise<{ rebaseInProgress: boolean; mergeInProgress: boolean }> {
+  const remote = sshFor(cwd);
+  if (remote) {
+    // One round trip: git knows where its state lives, the shell knows if it exists.
+    const command =
+      `cd ${shq(cwd)} && for f in rebase-merge rebase-apply MERGE_HEAD; do ` +
+      `p=$(git rev-parse --git-path "$f" 2>/dev/null) || continue; ` +
+      `[ -n "$p" ] && [ -e "$p" ] && echo "$f"; done`;
+    const r = await runSsh(remote, command).catch(() => null);
+    const found = new Set((r?.stdout ?? '').split('\n').map((s) => s.trim()).filter(Boolean));
+    return {
+      rebaseInProgress: found.has('rebase-merge') || found.has('rebase-apply'),
+      mergeInProgress: found.has('MERGE_HEAD'),
+    };
+  }
   const [rebaseMerge, rebaseApply, mergeHead] = await Promise.all([
     gitPath(cwd, 'rebase-merge'),
     gitPath(cwd, 'rebase-apply'),
     gitPath(cwd, 'MERGE_HEAD'),
   ]);
   const rebaseInProgress =
-    (!!rebaseMerge && fs.existsSync(rebaseMerge)) || (!!rebaseApply && fs.existsSync(rebaseApply));
-  const mergeInProgress = !!mergeHead && fs.existsSync(mergeHead);
+    (!!rebaseMerge && pathExists(cwd, rebaseMerge)) || (!!rebaseApply && pathExists(cwd, rebaseApply));
+  const mergeInProgress = !!mergeHead && pathExists(cwd, mergeHead);
   return { rebaseInProgress, mergeInProgress };
 }
 
@@ -526,13 +646,8 @@ export async function getDiff(cwd: string, opts: DiffOptions): Promise<FileDiff[
 
 async function synthesizeUntrackedDiff(cwd: string, filePath: string): Promise<FileDiff | null> {
   const abs = path.join(cwd, filePath);
-  if (!fs.existsSync(abs)) return null;
-  let buf: Buffer;
-  try {
-    buf = fs.readFileSync(abs);
-  } catch {
-    return null;
-  }
+  const buf = await readFileBuffer(cwd, abs);
+  if (!buf) return null;
   // Best-effort binary detection: NUL byte in first 8KB.
   const head = buf.subarray(0, Math.min(buf.length, 8192));
   const isBinary = head.includes(0);

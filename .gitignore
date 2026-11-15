@@ -10,3 +10,9 @@ out/
 .env
 .env.local
 .env.*.local
+
+.claude
+.agents
+.shots
+design
+skills-lock.json

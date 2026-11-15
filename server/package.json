@@ -1,0 +1,6 @@
+{
+  "name": "differ-server",
+  "private": true,
+  "type": "module",
+  "description": "Headless differ server: runs ACP agents and serves threads to desktop and mobile clients. Dependencies resolve from the repository root."
+}

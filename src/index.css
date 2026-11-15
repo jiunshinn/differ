@@ -203,3 +203,53 @@ input, textarea, [contenteditable='true'] {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* Agent message Markdown (src/shell/Markdown.tsx). */
+.prose-agent {
+  color: rgb(var(--color-text-secondary));
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.prose-agent > * + * { margin-top: 0.7em; }
+.prose-agent strong { color: rgb(var(--color-text-primary)); font-weight: 600; }
+.prose-agent h1, .prose-agent h2, .prose-agent h3, .prose-agent h4 {
+  color: rgb(var(--color-text-primary));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin-top: 1.2em;
+}
+.prose-agent h1 { font-size: 18px; }
+.prose-agent h2 { font-size: 16px; }
+.prose-agent h3, .prose-agent h4 { font-size: 14.5px; }
+.prose-agent ul, .prose-agent ol { padding-left: 1.3em; }
+.prose-agent ul { list-style: disc; }
+.prose-agent ol { list-style: decimal; }
+.prose-agent li + li { margin-top: 0.25em; }
+.prose-agent li::marker { color: rgb(var(--color-text-muted)); }
+.prose-agent a { color: rgb(var(--color-text-primary)); text-decoration: underline; text-decoration-color: rgb(var(--color-border-strong)); text-underline-offset: 2px; cursor: pointer; }
+.prose-agent a:hover { text-decoration-color: currentColor; }
+.prose-agent code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: rgb(var(--color-text-primary));
+  background: rgb(var(--color-bg-hover));
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.prose-agent pre {
+  background: rgb(var(--color-bg-panel));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+.prose-agent pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+.prose-agent blockquote { border-left: 2px solid rgb(var(--color-border-strong)); padding-left: 12px; color: rgb(var(--color-text-muted)); }
+.prose-agent hr { border: 0; border-top: 1px solid rgb(var(--color-border)); }
+.prose-agent table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+.prose-agent th, .prose-agent td { border: 1px solid rgb(var(--color-border)); padding: 4px 10px; text-align: left; }
+.prose-agent th { color: rgb(var(--color-text-primary)); font-weight: 600; background: rgb(var(--color-bg-panel)); }
